@@ -76,9 +76,10 @@ tokens, not every alias you saw.
 | `muse` | `muse`, `muse-code` | `~/.config/muse` |
 | `cursor` | `cursor`, `cursor-agent` | `~/.cursor` |
 | `kilo` | `kilo` | `~/.local/share/kilo` |
+| `mimo` | `mimo` | `~/.local/share/mimocode` |
 
 Supported set (append-only; do not reorder):
-`claude,codex,grok,agy,opencode,pi,omp,devin,muse,cursor,kilo`.
+`claude,codex,grok,agy,opencode,pi,omp,devin,muse,cursor,kilo,mimo`.
 
 If nothing matches, install **all** and say so. Prefer the detected subset:
 `configure` writes Claude/Agy `statusLine` entries and Cursor hooks only for
@@ -140,7 +141,7 @@ herdr integration status
 For each **detected** agent whose line is `not installed`, run
 `herdr integration install <id>`:
 
-`claude`, `codex`, `grok`, `opencode`, `pi`, `omp`, `devin`, `cursor`, `kilo`.
+`claude`, `codex`, `grok`, `opencode`, `pi`, `omp`, `devin`, `cursor`, `kilo`. MiMo has no Herdr integration; it is reported as a custom `mimo` agent (for example by mimo-code-herdr).
 
 Skip ids the user does not have. `configure` already tries omp when omp is
 selected; a machine without omp must skip it, not fail the rest.
@@ -152,7 +153,7 @@ just installed.
 
 `configure` copies **Herdr Agent Icons Max** into `~/Library/Fonts` (macOS)
 or `~/.local/share/fonts` (Linux) and, if a Ghostty or kitty config **already
-exists**, writes a marked `U+E1A0–U+E1B6` / `U+E1C0–U+E1C5` map. It does
+exists**, writes a marked map for `U+E1A0–U+E1B6` / `U+E1C0–U+E1C5` → Herdr Agent Icons Max and `U+E1B7` → Herdr Agent MiMo. It does
 **not** create a terminal config from scratch, and it does not map WezTerm,
 iTerm, Alacritty, Terminal.app, Warp, or VS Code / Cursor's integrated
 terminal.
@@ -173,6 +174,7 @@ Ghostty:
 ```
 # BEGIN herdr-agent-usage font
 font-codepoint-map = U+E1A0-U+E1B6="Herdr Agent Icons Max"
+font-codepoint-map = U+E1B7="Herdr Agent MiMo"
 font-codepoint-map = U+E1C0-U+E1C5="Herdr Agent Icons Max"
 # END herdr-agent-usage font
 ```
@@ -185,6 +187,7 @@ kitty (`~/.config/kitty/kitty.conf`):
 ```
 # BEGIN herdr-agent-usage font
 symbol_map U+E1A0-U+E1B6 Herdr Agent Icons Max
+symbol_map U+E1B7 Herdr Agent MiMo
 symbol_map U+E1C0-U+E1C5 Herdr Agent Icons Max
 # END herdr-agent-usage font
 ```
@@ -202,7 +205,7 @@ the marks. Muse uses the text mark `◈` on purpose (no glyph in that face).
 6. Nested extra tabs of the same vendor on a **wide** sidebar have **no**
    brand icon by design. Only the vendor head row does.
 7. A **yellow `?`** on a brand cell after 1.6.1 is almost always "this
-   terminal is not using Herdr Agent Icons Max for U+E1A0–U+E1B6". On a
+   terminal is not using Herdr Agent Icons Max / Herdr Agent MiMo for the vendor / MiMo PUA ranges". On a
    plugin older than 1.6.1, working-state used ZWNJ and the icon font drew
    `?` — upgrade, then reload.
 

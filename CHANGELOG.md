@@ -6,6 +6,28 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+
+- **MiMo Code.** A MiMo pane gets a sidebar row with the agent name, the
+  session title as the topic, and the session's context-window bar (`cx`).
+  Xiaomi publishes no quota API, so 5h/7d/30d stay empty and no billing
+  collector is registered. Context is
+  `input + output + reasoning + cache.read + cache.write` on the newest
+  main-agent step that has output, divided by the usable window: `limit.input`
+  when the catalog has one, otherwise `limit.context`, lowered by
+  `compaction.max_context` when that budget is smaller, then
+  `floor(effective × 0.9)`. Sessions come from `mimocode.db` (read-only; the
+  credential tables are never selected). When Herdr exposes an `agent_session`
+  id, that session is used; otherwise the newest root session
+  (`parent_id IS NULL`) whose directory matches the pane cwd wins, and two
+  root sessions in the same directory updated within 120 seconds publish no
+  `cx` rather than a wrong one.
+
+  The sidebar icon is the official MiMo logo in a **separate** one-glyph face
+  (`Herdr Agent MiMo`) at `U+E1B7`. HerdrAgentIconsMax stays byte-identical to
+  upstream (vendor range `U+E1A0–E1B6`); terminal maps and fontconfig append
+  both families.
+
 ### Fixed
 
 - `rustls` 0.23.45 → 0.23.46 (`RUSTSEC-2026-0346`, `RUSTSEC-2026-0347`,

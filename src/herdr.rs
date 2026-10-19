@@ -1875,6 +1875,8 @@ fn quota_scope(pane: &AgentPane, evidence: &PayerEvidence) -> Option<String> {
         Harness::Claude => evidence.claude_account(pane.session.as_ref()?.id()?),
         // Its statusLine names no account, and nothing stamps one.
         Harness::Agy => None,
+        // Session-local only: one row per pane, no account to share.
+        Harness::Mimo => None,
         Harness::Omp | Harness::Pi | Harness::Kilo | Harness::OpenCode => {
             pane.session.as_ref()?;
             memoized_scope(pane, session_quota_scope)
@@ -3601,6 +3603,47 @@ mod tests {
             tokens.get("quota_week_normal").map(String::as_str),
             Some("7d 46%")
         );
+    }
+
+    #[test]
+    fn mimo_identity_row_is_provider_model_with_context_and_no_windows() {
+        let mut desired = BTreeMap::new();
+        apply_identity(
+            &mut desired,
+            &PaneIdentity {
+                provider: "MiMo".to_string(),
+                model: "mimo-v2.6-pro".to_string(),
+            },
+            36,
+            VendorRow::Flat,
+        );
+        apply_context(
+            &mut desired,
+            &ContextUsage::new(7.3).unwrap(),
+            0,
+            RowStyle {
+                percent: PercentStyle::Remaining,
+                shape: SidebarShape::new(SidebarLayout::Gauges, 36),
+                fields: FieldSet::all(),
+                pacing: Default::default(),
+            },
+        );
+        assert_eq!(
+            desired.get("quota_provider_model").map(String::as_str),
+            Some("MiMo/mimo-v2.6-pro"),
+            "{desired:?}"
+        );
+        assert!(
+            desired.keys().any(|name| name.starts_with("quota_context")),
+            "expected a context token: {desired:?}"
+        );
+        for name in ACCOUNT_QUOTA_TOKEN_NAMES {
+            assert!(!desired.contains_key(name), "{name}: {desired:?}");
+        }
+        for name in ["quota_cache", "quota_cache_ttl", "quota_cache_state"] {
+            let present = desired.get(name).is_some_and(|v| !v.is_empty());
+            assert!(!present, "{name} should stay empty without cache evidence");
+        }
     }
 
     #[test]

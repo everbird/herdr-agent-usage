@@ -484,11 +484,11 @@ fn handle_event(event: &Value) -> Result<()> {
     // current returns the finisher and would skip teal for every completion.
     // `handle_named_pane` folds the working set into status before publish.
     // Pi's and omp's exact session files carry the routing evidence, and
-    // Muse/Cursor transcripts record the prompt itself. Reading their panes
-    // would add a visible repaint without improving attribution or the topic.
+    // Muse/Cursor/MiMo transcripts record the prompt itself. Reading their
+    // panes would add a visible repaint without improving attribution or the topic.
     let topic_pane = (!matches!(
         harness,
-        Harness::Pi | Harness::Omp | Harness::Muse | Harness::Cursor
+        Harness::Pi | Harness::Omp | Harness::Muse | Harness::Cursor | Harness::Mimo
     ))
     .then_some(pane_id);
     let result = handle_named_pane(
@@ -909,14 +909,15 @@ fn publish_row(cache: &CacheStore) -> RowStyle {
     }
 }
 
-/// Muse last prompt and Cursor/Grok generated session titles are the same
-/// evidence other harnesses read off the screen, so they are also that pane's
-/// topic. Codex keeps a screen topic and stores the thread preview separately.
+/// Muse last prompt, Cursor/Grok generated session titles, and MiMo's
+/// `session.title` are the same evidence other harnesses read off the screen,
+/// so they are also that pane's topic. Codex keeps a screen topic and stores
+/// the thread preview separately.
 fn apply_session_summary(pane: &mut AgentPane, summary: &str) {
     pane.session_summary = summary.to_string();
     if matches!(
         pane.harness,
-        Harness::Muse | Harness::Cursor | Harness::Grok
+        Harness::Muse | Harness::Cursor | Harness::Grok | Harness::Mimo
     ) {
         pane.topic = summary.to_string();
     }
@@ -934,8 +935,12 @@ fn resolved_pane_tokens(
         resolution,
         identity,
         context,
+        session_summary,
         omp,
     } = resolved;
+    if let Some(summary) = session_summary.as_deref().filter(|s| !s.trim().is_empty()) {
+        apply_session_summary(pane, summary);
+    }
     let mut quota = match resolution {
         Resolution::Subscription(target)
             if target.credential_scope == CredentialScope::OMP_STORE =>
@@ -2151,7 +2156,7 @@ mod tests {
     }
 
     #[test]
-    fn muse_cursor_and_grok_session_summaries_replace_the_topic() {
+    fn muse_cursor_grok_and_mimo_session_summaries_replace_the_topic() {
         let mut muse = test_pane("w1:p1", Harness::Muse);
         muse.topic = "old prompt".to_string();
         apply_session_summary(&mut muse, "new prompt");
@@ -2168,11 +2173,28 @@ mod tests {
         apply_session_summary(&mut grok, "Chat honesty: unsupported answers");
         assert_eq!(grok.topic, "Chat honesty: unsupported answers");
 
+        let mut mimo = test_pane("w1:p5", Harness::Mimo);
+        mimo.topic = "old prompt".to_string();
+        apply_session_summary(&mut mimo, "MiMo Agent Name Like Grok");
+        assert_eq!(mimo.topic, "MiMo Agent Name Like Grok");
+
         let mut codex = test_pane("w1:p2", Harness::Codex);
         codex.topic = "screen topic".to_string();
         apply_session_summary(&mut codex, "thread name");
         assert_eq!(codex.topic, "screen topic");
         assert_eq!(codex.session_summary, "thread name");
+    }
+
+    #[test]
+    fn mimo_event_path_never_reads_the_pane() {
+        // Same exclusion as Pi/omp/Muse/Cursor: the session DB is the evidence.
+        let harness = Harness::Mimo;
+        let topic_pane = (!matches!(
+            harness,
+            Harness::Pi | Harness::Omp | Harness::Muse | Harness::Cursor | Harness::Mimo
+        ))
+        .then_some("w1:p1");
+        assert_eq!(topic_pane, None);
     }
 
     fn test_pane_with_session(id: &str, harness: Harness, session: &str) -> AgentPane {
@@ -2231,6 +2253,7 @@ mod tests {
             resolution: Resolution::Indeterminate,
             identity: None,
             context: None,
+            session_summary: None,
             omp: None,
         };
         let mut published = None;
@@ -2385,6 +2408,7 @@ mod tests {
                     ),
                     identity: None,
                     context: None,
+                    session_summary: None,
                     omp: None,
                 };
                 let published = resolved_pane_tokens(
@@ -2446,6 +2470,7 @@ mod tests {
             resolution: Resolution::Indeterminate,
             identity: None,
             context: None,
+            session_summary: None,
             omp: None,
         };
         let published = resolved_pane_tokens(
@@ -2557,6 +2582,7 @@ mod tests {
                 model: "model-b".to_string(),
             }),
             context: None,
+            session_summary: None,
             omp: None,
         };
         let published = resolved_pane_tokens(
