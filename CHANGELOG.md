@@ -12,7 +12,8 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   `Provider/model` beside its icon. That text is the unbold `$quota_member`
   cell of the identity row; the bold provider cell stays empty, so Herdr does
   not paint the row as its own Space. The label is not moved onto the later
-  model row.
+  model row. Focusing a Codex child keeps that icon; the icon-only path was
+  dropping it and leaving the name indented.
 
 ### Added
 

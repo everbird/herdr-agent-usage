@@ -1109,7 +1109,7 @@ pub fn publish_icon_tokens(panes: &[AgentPane], sequence: u64) -> Result<()> {
             pane,
             &group_heads,
             &BTreeMap::new(),
-            role,
+            icon_role(role, pane.harness),
             Some(vendor_icon_status(&nesting, pane, role)),
         );
         if icon_tokens_match(&pane.tokens, &desired) {
@@ -1218,7 +1218,7 @@ fn publish_pane_tokens_inner(
             pane,
             &group_heads,
             &workspace_labels,
-            if codex_child { VendorRow::Flat } else { role },
+            icon_role(role, pane.harness),
             Some(vendor_icon_status(&nesting, pane, role)),
         );
         apply_pack_gap(
@@ -1632,6 +1632,19 @@ fn vendor_row_for(wide: bool, nesting: &VendorNesting, pane_id: &str) -> VendorR
         VendorRow::Head
     } else {
         VendorRow::Flat
+    }
+}
+
+/// Which role draws the icon.
+///
+/// A Codex child is its own seat: it keeps the flat mark beside `Codex/model`.
+/// The focus path rewrites icons only. Passing [`VendorRow::Child`] there
+/// deletes the mark, and the name is left indented under the other Codex.
+fn icon_role(role: VendorRow, harness: Harness) -> VendorRow {
+    if role == VendorRow::Child && harness == Harness::Codex {
+        VendorRow::Flat
+    } else {
+        role
     }
 }
 
@@ -3566,6 +3579,67 @@ mod tests {
         assert!(!desired.contains_key("quota_provider_model"));
         assert!(!desired.contains_key("quota_provider"));
         assert!(!desired.contains_key("quota_model"));
+    }
+
+    /// Focus rewrites icons only. A Codex child must keep the mark beside the
+    /// merged name; the nested-child role deletes that mark and indents the row.
+    #[test]
+    fn focus_icon_rewrite_keeps_a_codex_child_mark_beside_its_name() {
+        let pane = AgentPane {
+            pane_id: "w5:pD".to_string(),
+            workspace_id: "w5".to_string(),
+            cwd: String::new(),
+            title: String::new(),
+            harness: Harness::Codex,
+            session: None,
+            session_summary: String::new(),
+            topic: String::new(),
+            tokens: BTreeMap::new(),
+            status: AgentStatus::Idle,
+            focused: true,
+        };
+        let mut desired = BTreeMap::from([(
+            MEMBER_LABEL_TOKEN.to_string(),
+            "Codex/gpt-5.6-codex".to_string(),
+        )]);
+        let heads = BTreeMap::from([("w5".to_string(), "w5:p1".to_string())]);
+        apply_group_and_icon(
+            &mut desired,
+            &pane,
+            &heads,
+            &BTreeMap::new(),
+            icon_role(VendorRow::Child, Harness::Codex),
+            Some(AgentStatus::Idle),
+        );
+        let icon = desired.get("quota_icon").map(String::as_str).unwrap();
+        assert!(
+            icon.contains(crate::icons::for_harness(Harness::Codex)),
+            "{icon:?}"
+        );
+        assert_eq!(
+            desired.get(MEMBER_LABEL_TOKEN).map(String::as_str),
+            Some("Codex/gpt-5.6-codex")
+        );
+        assert!(!desired[MEMBER_LABEL_TOKEN].starts_with('\u{200b}'));
+
+        let mut nested = BTreeMap::from([
+            ("quota_icon".to_string(), "mark".to_string()),
+            ("quota_model".to_string(), "grok-4".to_string()),
+        ]);
+        let grok = AgentPane {
+            harness: Harness::Grok,
+            ..pane
+        };
+        apply_group_and_icon(
+            &mut nested,
+            &grok,
+            &heads,
+            &BTreeMap::new(),
+            icon_role(VendorRow::Child, Harness::Grok),
+            Some(AgentStatus::Idle),
+        );
+        assert!(!nested.contains_key("quota_icon"));
+        assert!(nested["quota_model"].starts_with('\u{200b}'));
     }
 
     #[test]
