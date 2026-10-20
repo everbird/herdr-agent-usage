@@ -14,6 +14,11 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   not paint the row as its own Space. The label is not moved onto the later
   model row. Focusing a Codex child keeps that icon; the icon-only path was
   dropping it and leaving the name indented.
+- **Working icon.** A pane Herdr reports as `working` turns the brand icon
+  yellow when `state_change_seq` is newer than the last acknowledgement.
+  The watcher's one-second tick reads that seq from `agent list`. Focus
+  acknowledgement stays on the metadata snapshot. The same seq after the
+  user has already seen that streak stays white.
 
 ### Added
 

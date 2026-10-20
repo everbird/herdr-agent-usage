@@ -272,6 +272,9 @@ pub struct AgentPane {
     /// Herdr `focused` describes the current pane, not whether a completion
     /// was acknowledged by a later focus event.
     pub focused: bool,
+    /// Herdr's lifecycle counter. It advances when `agent_status` changes, so
+    /// a working status with a newer value is a new turn.
+    pub state_change_seq: u64,
 }
 
 impl AgentPane {
@@ -466,6 +469,18 @@ fn socket_request(payload: &Value) -> Result<Option<Value>> {
 
 pub fn list_agent_panes() -> Result<Vec<AgentPane>> {
     Ok(list_agent_state()?.panes)
+}
+
+/// Status, seq, and published tokens for the one-second icon tick.
+///
+/// Session recovery walks Muse processes and Codex `process-info`. That stays
+/// on the interval poll. Icon colour does not need a session.
+pub fn list_agent_panes_for_icons() -> Result<Vec<AgentPane>> {
+    let mut panes = Vec::new();
+    collect_agent_panes(&list_agent_value()?, &mut panes);
+    let mut seen = BTreeSet::new();
+    panes.retain(|pane| seen.insert(pane.pane_id.clone()));
+    Ok(panes)
 }
 
 /// Read Herdr's agent inventory once and derive both panes and working
@@ -933,6 +948,10 @@ fn collect_agent_panes(value: &Value, panes: &mut Vec<AgentPane>) {
                         .map(AgentStatus::parse)
                         .unwrap_or_default();
                     let focused = map.get("focused").and_then(Value::as_bool).unwrap_or(false);
+                    let state_change_seq = map
+                        .get("state_change_seq")
+                        .and_then(Value::as_u64)
+                        .unwrap_or(0);
                     // Codex rollouts record the native foreground process's
                     // cwd. Other collectors keep the pane cwd contract they
                     // already use.
@@ -964,6 +983,7 @@ fn collect_agent_panes(value: &Value, panes: &mut Vec<AgentPane>) {
                         tokens,
                         status,
                         focused,
+                        state_change_seq,
                     });
                 }
             }
@@ -2966,6 +2986,7 @@ mod tests {
             tokens: BTreeMap::new(),
             status: AgentStatus::Idle,
             focused: false,
+            state_change_seq: 0,
         };
         let mut panes = vec![
             pane("w1:p1", Harness::Muse, None),
@@ -3049,6 +3070,7 @@ mod tests {
             tokens: BTreeMap::new(),
             status: AgentStatus::Idle,
             focused: false,
+            state_change_seq: 0,
         };
         let mut desired = BTreeMap::new();
         apply_group_and_icon(
@@ -3076,6 +3098,7 @@ mod tests {
             tokens: BTreeMap::from([(HEADROOM_TOKEN.to_string(), "046".to_string())]),
             status: AgentStatus::Idle,
             focused: true,
+            state_change_seq: 0,
         };
         let mut extra = AgentPane {
             pane_id: "w5:pD".to_string(),
@@ -3089,6 +3112,7 @@ mod tests {
             tokens: BTreeMap::from([(HEADROOM_TOKEN.to_string(), "046".to_string())]),
             status: AgentStatus::Idle,
             focused: false,
+            state_change_seq: 0,
         };
         extra.focused = true;
         extra.status = AgentStatus::Working;
@@ -3142,6 +3166,7 @@ mod tests {
                 tokens: BTreeMap::new(),
                 status: AgentStatus::Idle,
                 focused: false,
+                state_change_seq: 0,
             },
             AgentPane {
                 pane_id: "w1:p2".to_string(),
@@ -3155,6 +3180,7 @@ mod tests {
                 tokens: BTreeMap::new(),
                 status: AgentStatus::Idle,
                 focused: false,
+                state_change_seq: 0,
             },
         ];
         let nesting = vendor_nesting(&panes, &panes, &[], PanelOrder::Quota);
@@ -3384,6 +3410,7 @@ mod tests {
                 .collect(),
             status: AgentStatus::Idle,
             focused: false,
+            state_change_seq: 0,
         }
     }
 
@@ -3438,6 +3465,7 @@ mod tests {
             tokens: BTreeMap::new(),
             status: AgentStatus::Idle,
             focused: false,
+            state_change_seq: 0,
         };
         let panes = vec![pane("w1:p1"), pane("w1:p2")];
         let nesting = vendor_nesting(&panes, &panes, &[], PanelOrder::Quota);
@@ -3459,6 +3487,7 @@ mod tests {
             tokens: BTreeMap::new(),
             status: AgentStatus::Done,
             focused: false,
+            state_change_seq: 0,
         };
         let extra = AgentPane {
             pane_id: "w5:pD".to_string(),
@@ -3472,6 +3501,7 @@ mod tests {
             tokens: BTreeMap::new(),
             status: AgentStatus::Idle,
             focused: false,
+            state_change_seq: 0,
         };
         let inventory = vec![head.clone(), extra];
         let nesting = vendor_nesting(&inventory, &inventory, &[], PanelOrder::Quota);
@@ -3495,6 +3525,7 @@ mod tests {
             tokens: BTreeMap::new(),
             status: AgentStatus::Idle,
             focused: false,
+            state_change_seq: 0,
         };
         let mut desired = BTreeMap::from([
             ("quota_provider".to_string(), "Codex".to_string()),
@@ -3597,6 +3628,7 @@ mod tests {
             tokens: BTreeMap::new(),
             status: AgentStatus::Idle,
             focused: true,
+            state_change_seq: 0,
         };
         let mut desired = BTreeMap::from([(
             MEMBER_LABEL_TOKEN.to_string(),
@@ -3703,6 +3735,7 @@ mod tests {
             tokens: BTreeMap::new(),
             status: AgentStatus::Idle,
             focused: false,
+            state_change_seq: 0,
         };
         let heads = BTreeMap::from([("w5".to_string(), "w5:p1".to_string())]);
         let mut desired = tokens.clone();
@@ -3825,6 +3858,7 @@ mod tests {
             tokens: BTreeMap::new(),
             status: AgentStatus::Idle,
             focused: false,
+            state_change_seq: 0,
         };
         let heads = BTreeMap::from([("w5".to_string(), "w5:p1".to_string())]);
         let mut desired = BTreeMap::new();
@@ -3863,6 +3897,7 @@ mod tests {
             ]),
             status: AgentStatus::Idle,
             focused: false,
+            state_change_seq: 0,
         };
         let sibling = AgentPane {
             pane_id: "w1:p2".to_string(),
@@ -3879,6 +3914,7 @@ mod tests {
             ]),
             status: AgentStatus::Idle,
             focused: false,
+            state_change_seq: 0,
         };
         let inventory = vec![head.clone(), sibling.clone()];
         let nesting = vendor_nesting(
@@ -4233,6 +4269,7 @@ mod tests {
                     tokens: BTreeMap::new(),
                     status: AgentStatus::Idle,
                     focused: false,
+                    state_change_seq: 0,
                 },
                 AgentPane {
                     pane_id: "w1:p2".to_string(),
@@ -4246,6 +4283,7 @@ mod tests {
                     tokens: BTreeMap::new(),
                     status: AgentStatus::Idle,
                     focused: false,
+                    state_change_seq: 0,
                 },
                 AgentPane {
                     pane_id: "w1:p4".to_string(),
@@ -4259,6 +4297,7 @@ mod tests {
                     tokens: BTreeMap::new(),
                     status: AgentStatus::Idle,
                     focused: false,
+                    state_change_seq: 0,
                 },
             ]
         );
@@ -4558,6 +4597,7 @@ mod tests {
             tokens: BTreeMap::from([(String::from("quota_badge"), String::from("[A]"))]),
             status: AgentStatus::Idle,
             focused: false,
+            state_change_seq: 0,
         };
         let desired = BTreeMap::from([(String::from("quota_state"), String::from("?"))]);
         assert!(!metadata_matches(&pane.tokens, &desired));
@@ -4609,6 +4649,7 @@ mod tests {
             tokens: BTreeMap::new(),
             status: AgentStatus::Idle,
             focused: false,
+            state_change_seq: 0,
         };
         let names = metadata_report_names(&pane, &desired);
         assert!(names.len() <= MAX_METADATA_TOKENS);
@@ -4660,6 +4701,7 @@ mod tests {
             tokens: BTreeMap::new(),
             status: AgentStatus::Idle,
             focused: false,
+            state_change_seq: 0,
         };
         let names = metadata_report_names(&pane, &desired);
         assert!(names.len() <= MAX_METADATA_TOKENS);
@@ -4930,6 +4972,7 @@ mod tests {
             tokens: BTreeMap::new(),
             status: AgentStatus::Idle,
             focused: false,
+            state_change_seq: 0,
         };
         let names = metadata_report_names(&pane, &desired);
         assert!(names.len() <= MAX_METADATA_TOKENS, "{names:?}");
@@ -5004,6 +5047,7 @@ mod tests {
             tokens,
             status: AgentStatus::Idle,
             focused: false,
+            state_change_seq: 0,
         };
         let names = metadata_report_names(&pane, &desired);
         assert!(names.len() <= MAX_METADATA_TOKENS);
@@ -5189,6 +5233,7 @@ mod tests {
             tokens,
             status: AgentStatus::Idle,
             focused: false,
+            state_change_seq: 0,
         };
         assert!(!metadata_matches(&pane.tokens, &desired));
         let names = metadata_report_names(&pane, &desired);
@@ -5237,6 +5282,7 @@ mod tests {
             tokens,
             status: AgentStatus::Idle,
             focused: false,
+            state_change_seq: 0,
         };
         assert!(!metadata_matches(&pane.tokens, &desired));
         let names = metadata_report_names(&pane, &desired);

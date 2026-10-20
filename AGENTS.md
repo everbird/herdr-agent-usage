@@ -82,10 +82,13 @@ billing targets, refresh active/settling targets, and publish to siblings with
 the same target without reading terminal output. A finishing target stays in
 the pass until the 60-second debounce has elapsed. The interval defaults to
 60 seconds and is bounded to 30 seconds–1 hour. While a pane is working or
-has an unseen completion, the watcher also checks the metadata-only Herdr
+has an unseen completion, the watcher checks the metadata-only Herdr
 snapshot once per second. Herdr 0.9 can miss TUI focus hooks; the snapshot
 reconciles those changes without reading pane output or writing unchanged
-metadata. The watcher stays alive for unseen completions until they are seen.
+metadata. Inventory `focused` is not that acknowledgement. The same tick
+reads `herdr agent list` when a pane is in `working` or `seen`, and repaints
+the brand icon yellow when `state_change_seq` is newer than the last
+acknowledgement. The watcher stays alive for unseen completions until they are seen.
 Local stop/connection checks interrupt sleeps. Uninstall writes a stop marker.
 
 ## omp's quota does not come from a provider endpoint
@@ -398,7 +401,9 @@ one, and setting it replaces the user's own `ui.agent_panel_sort`. Rules:
    by sidebar `rules`, not a later twin token — a later `$quota_icon_done`
    hang-indents one cell under the Space name. Colour replaces Herdr's `state_icon`
    ring: yellow while working, teal for an unseen completion, white after
-   focusing that pane or moving focus away from it. Do not trust CLI `agent_status` for the teal
+   focusing that pane or moving focus away from it. A working status whose
+   `state_change_seq` is newer than that acknowledgement is a new turn and
+   paints yellow again; the same seq stays white. Do not trust CLI `agent_status` for the teal
    step — same-tab siblings finish as server `idle` while the TUI ring is
    still teal. Persist working/unseen pane ids in plugin state
    (`icon-attention.json`) and never call `herdr pane current` from

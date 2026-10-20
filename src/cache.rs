@@ -50,6 +50,10 @@ pub struct IconAttention {
     pub unseen: BTreeSet<String>,
     #[serde(default, skip_serializing_if = "BTreeSet::is_empty")]
     pub seen: BTreeSet<String>,
+    /// `state_change_seq` when the pane was acknowledged. A later working
+    /// status at this same seq is the streak the user already saw.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub seen_seq: BTreeMap<String, u64>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub last_focused: Option<String>,
 }
