@@ -175,7 +175,7 @@ impl Settings {
                 },
             },
             Choice::PaneTitles => match self.pane_titles {
-                PaneTitles::On => "scrolling terminal title replaces topic",
+                PaneTitles::On => "scrolling title replaces topic",
                 PaneTitles::Off => "keep the extracted topic",
             },
             Choice::RowGap => match self.gap.as_u8() {

@@ -8,6 +8,10 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- **Pane titles.** On by default. The topic line is the tab name, then the
+  pane's scrolling terminal title. Off keeps the extracted topic in that same
+  cell. Herdr supplies the tab name only when the Space has another tab, or
+  the tab was renamed, so a lone automatic `1` shows the title by itself.
 - **MiMo Code.** A MiMo pane gets a sidebar row with the agent name, the
   session title as the topic, and the session's context-window bar (`cx`).
   Xiaomi publishes no quota API, so 5h/7d/30d stay empty and no billing

@@ -145,7 +145,11 @@ at all, so a failed key beside a working one is invisible and not counted.
   caches cannot prove a current login. A failed attempt is debounced by the
   attempted identity; a different login can refresh immediately.
 - Codex rollouts provide diagnostics only. Fresh API windows replace old
-  windows, including ones an older plugin borrowed from a rollout.
+  windows, including ones an older plugin borrowed from a rollout. Herdr 0.9.5
+  no longer installs Codex turn hooks; Codex status is screen detection again,
+  and the session id still comes from `herdr integration install codex`. Do not
+  put those turn hooks back. An `outdated` Codex line is updated by reinstalling
+  that integration, not by a change in this plugin.
 - Claude/Agy StatusLine has no reliable serving-account ID. New observations
   carry `session_quota_only`; they never share windows by profile directory.
   Rebuild old mailboxes from their raw payload, not merged profile windows.
@@ -374,6 +378,12 @@ one, and setting it replaces the user's own `ui.agent_panel_sort`. Rules:
    the group's head, the role, and the pane's own position, so it moves only
    when tabs open, close, or move (the `layout` path) and never with quota.
    Positions count per Space so a change in one Space rewrites no other.
+   The topic line is a dim `tab` cell and then either `terminal_title_stripped`
+   (pane titles on, the default) or `$quota_topic`. Herdr's `tab` token is empty
+   unless that Space has more than one tab or the tab has a custom label, so a
+   lone automatic `1` renders as the title alone. Do not publish a metadata
+   token to fill that `1`, and do not make the title row bold: an empty
+   `$quota_group` lets the next bold row paint as a Space header.
    `$quota_group` names the Space on the tightest pane in that workspace;
    `$quota_icon` is the vendor mark on every identity row (bundled icon font;
    Muse uses a text glyph). Working/done colour is an invisible suffix matched

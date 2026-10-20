@@ -10,7 +10,7 @@
 订阅额度。
 
 **完成标准是侧栏可用**，不是 `./install.sh` 返回 0。图标变成方框或 `?`、没有
-额度、Herdr integration 仍是 `not installed`，都算没装完。
+额度、Herdr integration 仍是 `not installed` 或 `outdated`，都算没装完。
 
 若当前工作区已经是本仓库，直接用。否则：
 
@@ -130,7 +130,7 @@ herdr plugin action invoke configure --plugin herdr-agent-usage
 herdr integration status
 ```
 
-对每个**已探测到**、且状态为 `not installed` 的 id 执行
+对每个**已探测到**、且状态为 `not installed` 或 `outdated` 的 id 执行
 `herdr integration install <id>`：
 
 `claude`、`codex`、`grok`、`opencode`、`pi`、`omp`、`devin`、`cursor`、`kilo`。MiMo 没有 Herdr 原生集成；由自定义 `mimo` 代理上报（例如 mimo-code-herdr）。
@@ -245,7 +245,7 @@ Hook 和 integration 只在会话启动时加载：
 | 现象 | 做什么 |
 | --- | --- |
 | 插件没有 / 侧栏行缺失 | 再跑 `./install.sh`，然后 configure。不要手改 Herdr `config.toml` 里的额度行。 |
-| integration 仍是 `not installed` | `herdr integration install <id>`，再重启该窗格。 |
+| integration 仍是 `not installed` 或 `outdated` | `herdr integration install <id>`，再重启该窗格。Herdr 0.9.5 会把 Codex 标成 `outdated`，直到重装；它不再安装 Codex 的 turn hook。 |
 | Claude/Agy 没有额度 | 在该会话发一轮。 |
 | OMP 没有额度 | `omp usage --json --redact --provider <id>` 必须能跑通。 |
 | Cursor 没有额度或仍是上一账号 | `cursor login` / `cursor-agent login`，再按上面做钥匙串 **Always Allow**。 |
