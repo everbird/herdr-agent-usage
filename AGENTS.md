@@ -388,7 +388,9 @@ one, and setting it replaces the user's own `ui.agent_panel_sort`. Rules:
    leaves `$quota_provider` and `$quota_provider_model` empty and publishes
    the same `Provider/model` text on `$quota_member`, the unbold cell of that
    row, so the name stays beside the icon. Do not move it onto `$quota_model`:
-   that token is a later row. A bold "Codex" or "Cursor/…" on a non-head is
+   that token is a later row. Focus rewrites icons only. A Codex child still
+   draws the flat mark beside `$quota_member`; the nested-child role deletes
+   that mark and indents the name. A bold "Codex" or "Cursor/…" on a non-head is
    drawn as its own Space and pulls the following rows out of the group.
    `$quota_group` names the Space on the tightest pane in that workspace;
    `$quota_icon` is the vendor mark on every identity row (bundled icon font;
