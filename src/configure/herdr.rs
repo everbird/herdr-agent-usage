@@ -523,8 +523,15 @@ pub fn add_quota_row_with_titles(
     pane_titles: PaneTitles,
 ) -> Result<String> {
     Ok(rewrite_quota_sidebar_with_titles(
-        input, agents, layout, row_gap, fields, brand, pane_titles,
-    )?.0)
+        input,
+        agents,
+        layout,
+        row_gap,
+        fields,
+        brand,
+        pane_titles,
+    )?
+    .0)
 }
 
 fn rewrite_quota_sidebar_with_titles(
@@ -673,7 +680,12 @@ fn build_managed_rows(
         // Native Herdr token: /rename updates without pane reads or metadata writes.
         updated_rows.insert(
             user_count + 1,
-            Value::Array(styled_row("terminal_title_stripped", None, Some(true), Some(false))),
+            Value::Array(styled_row(
+                "terminal_title_stripped",
+                None,
+                Some(true),
+                Some(false),
+            )),
         );
     }
     // Keep `$quota_group` first so Space aggregation stays the head row;
@@ -1793,7 +1805,9 @@ mod tests {
             assert_eq!(on.matches("terminal_title_stripped").count(), 1, "{on}");
             assert_eq!(rewrite(&on, layout, PaneTitles::On), on);
             let document = on.parse::<DocumentMut>().unwrap();
-            let rows = document["ui"]["sidebar"]["agents"]["rows"].as_array().unwrap();
+            let rows = document["ui"]["sidebar"]["agents"]["rows"]
+                .as_array()
+                .unwrap();
             let title = rows
                 .iter()
                 .position(|row| row_contains_token(row, "terminal_title_stripped"))
@@ -1806,7 +1820,10 @@ mod tests {
             assert_eq!(rewrite(&off, layout, PaneTitles::Off), off);
             assert_eq!(rewrite(&off, layout, PaneTitles::On), on);
             let uninstalled = remove_quota_row(&on).unwrap();
-            assert!(!uninstalled.contains("terminal_title_stripped"), "{uninstalled}");
+            assert!(
+                !uninstalled.contains("terminal_title_stripped"),
+                "{uninstalled}"
+            );
             assert!(uninstalled.contains("\"workspace\""), "{uninstalled}");
         }
     }

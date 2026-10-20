@@ -9,8 +9,8 @@ mod statusline;
 
 use crate::cache::CacheStore;
 use crate::cli::{
-    AgentOrder, AgentSelection, BrandColors, ConfigureOptions, FieldSet, LowQuotaAlert,
-    PaneTitles, PercentStyle, SidebarLayout, SidebarPacing, SidebarRowGap, StatuslinePace,
+    AgentOrder, AgentSelection, BrandColors, ConfigureOptions, FieldSet, LowQuotaAlert, PaneTitles,
+    PercentStyle, SidebarLayout, SidebarPacing, SidebarRowGap, StatuslinePace,
 };
 use crate::model::Harness;
 use crate::prefs;
