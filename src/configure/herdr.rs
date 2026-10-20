@@ -8,7 +8,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use toml_edit::{Array, ArrayOfTables, DocumentMut, InlineTable, Item, Table, Value};
 
-const QUOTA_ROW_MARKERS: [&str; 68] = [
+const QUOTA_ROW_MARKERS: [&str; 69] = [
     "$quota_badge",
     "$quota_state",
     "$quota_icon",
@@ -20,6 +20,7 @@ const QUOTA_ROW_MARKERS: [&str; 68] = [
     "$quota_provider",
     "$quota_model",
     "$quota_provider_model",
+    "$quota_member",
     "$quota_status",
     "$quota_summary",
     "$quota_session",
@@ -1225,10 +1226,18 @@ fn append_pack_gap_row(rows: &mut Array) {
 }
 
 fn append_identity_row(rows: &mut Array) {
-    rows.push(Value::Array(identity_cells(
-        "$quota_provider_model",
-        Some(true),
-    )));
+    let mut row = identity_cells("$quota_provider_model", Some(true));
+    // Same row as the icon. Heads fill the bold cell. Other panes fill this
+    // unbold cell and leave the bold one empty, so Herdr does not promote
+    // the row into a Space. An empty cell is dropped, which keeps one
+    // ` · ` between the icon and the name.
+    row.push(styled_token(
+        "$quota_member",
+        Some(IDLE_ICON_COLOR),
+        Some(false),
+        Some(false),
+    ));
+    rows.push(Value::Array(row));
 }
 
 /// Brand icon, then the name.
@@ -1414,6 +1423,12 @@ fn retain_selected_fields(rows: &mut Array, fields: FieldSet) {
             // `field_for_token` cannot decide it: hiding the model degrades it
             // to the provider, hiding the provider degrades it to the model,
             // and hiding both drops the identity line.
+            if configured_token_name(item) == Some("$quota_member")
+                && !fields.contains(SidebarField::Provider)
+                && !fields.contains(SidebarField::Model)
+            {
+                continue;
+            }
             if configured_token_name(item) == Some("$quota_provider_model") {
                 match (
                     fields.contains(SidebarField::Provider),
@@ -2447,21 +2462,21 @@ rows = [["state_icon", "agent"]]
             (
                 "",
                 [
-                    "f2939ab3211906c573d0bf312d7285c88ad39dc99458770b6fdd84a308c29377",
+                    "c1884f4aa06a586bcb984577c124d93554b55a85813f61a00f3fa0a72ade2898",
                     "6ee4dda7e2a613580ff4b7f7582f8b554d8bae9f2fd64fce9d94e015d6fb4172",
                 ],
             ),
             (
                 "[ui.sidebar.agents]\nrows = [[\"state_icon\", \"machine\", \"workspace\", \"tab\"], [\"agent\"]]\n",
                 [
-                    "629c652cf994c499689d2c74d31569e5b46a2380cb7de24c5a59b07a4e346696",
+                    "1e33b5299d85253ba6f7d574ed06db9332643d2e7b272695573c8d8774c2b37c",
                     "9310e109c5b0612f29bfe43cfb227a0209eea60481ef3d0d0a7b6aaf267f8da7",
                 ],
             ),
             (
                 "[ui.sidebar.agents]\nrows = [[\"state_icon\", { token = \"tab\", bold = true }, \"$quota_provider_model\"], [\"$quota_topic\"]] # herdr-agent-quota-row\n",
                 [
-                    "629c652cf994c499689d2c74d31569e5b46a2380cb7de24c5a59b07a4e346696",
+                    "1e33b5299d85253ba6f7d574ed06db9332643d2e7b272695573c8d8774c2b37c",
                     "9310e109c5b0612f29bfe43cfb227a0209eea60481ef3d0d0a7b6aaf267f8da7",
                 ],
             ),
@@ -2656,6 +2671,28 @@ rows = [["state_icon", "agent"]]
         assert_eq!(
             configured_token_name(identity.get(1).unwrap()),
             Some("$quota_provider_model")
+        );
+        assert_eq!(
+            identity
+                .get(1)
+                .unwrap()
+                .as_inline_table()
+                .and_then(|cell| cell.get("bold"))
+                .and_then(Value::as_bool),
+            Some(true)
+        );
+        assert_eq!(
+            configured_token_name(identity.get(2).unwrap()),
+            Some("$quota_member")
+        );
+        assert_eq!(
+            identity
+                .get(2)
+                .unwrap()
+                .as_inline_table()
+                .and_then(|cell| cell.get("bold"))
+                .and_then(Value::as_bool),
+            Some(false)
         );
         assert!(identity
             .iter()

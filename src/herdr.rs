@@ -16,7 +16,7 @@ const MAX_METADATA_TOKENS: usize = 16;
 /// not free: it is compared on every refresh and it competes for Herdr's
 /// 16-token report budget. Add a name here only together with the field that
 /// fills it.
-const METADATA_TOKEN_NAMES: [&str; 52] = [
+const METADATA_TOKEN_NAMES: [&str; 53] = [
     "quota_group",
     "quota_pad",
     "quota_icon",
@@ -25,6 +25,7 @@ const METADATA_TOKEN_NAMES: [&str; 52] = [
     "quota_provider",
     "quota_model",
     "quota_provider_model",
+    "quota_member",
     "quota_context",
     "quota_context_normal",
     "quota_context_warning",
@@ -87,6 +88,9 @@ pub(crate) const STACK_TOKEN: &str = "quota_stack";
 /// Trailing blank after a pane when the user wants separated agents.
 /// Nested vendor children omit it so they stay flush; Herdr `row_gap` is 0.
 pub(crate) const NEST_GAP_TOKEN: &str = "quota_nest_gap";
+/// Unbold name on the icon's row. Non-heads publish `Provider/model` here so
+/// the bold `$quota_provider_model` cell stays empty and is not a Space.
+const MEMBER_LABEL_TOKEN: &str = "quota_member";
 /// Must survive Herdr's token trim: NBSP is whitespace and the row vanishes.
 const NEST_GAP_VALUE: &str = "\u{200b}\u{2800}";
 /// Visible account-quota window names that repeat for every pane of the same
@@ -173,12 +177,13 @@ const CONTEXT_TOKEN_NAMES: [&str; 4] = [
 /// Values that must reach the pane in the *same* report that changed them,
 /// even when the budget is tight: the identity, the live diagnostics, and the
 /// inline week variants, whose styling flips as soon as a 5h window appears.
-const ROWS_THAT_MUST_NOT_LAG: [&str; 19] = [
+const ROWS_THAT_MUST_NOT_LAG: [&str; 20] = [
     "quota_group",
     "quota_icon",
     "quota_provider",
     "quota_model",
     "quota_provider_model",
+    "quota_member",
     "quota_topic",
     "quota_context",
     "quota_context_normal",
@@ -1223,16 +1228,22 @@ fn publish_pane_tokens_inner(
             &pane.pane_id,
             pack_gap_enabled(),
         );
-        // `$quota_provider_model` is a bold row. Herdr collapses an empty
-        // `$quota_group` and paints the next bold row as a Space, so a Codex
-        // helper or a second vendor in the same Space jumps out of the group
-        // until some later publish happens to move the header. Only the Space
-        // head may keep that row.
-        if group_heads
+        // `$quota_provider_model` is bold, and it shares the icon's row.
+        // Herdr collapses an empty `$quota_group` and paints the next bold
+        // row as a Space. A non-head keeps `Provider/model` on `$quota_member`,
+        // the unbold cell of that same row, so the label stays beside the icon.
+        desired.remove(MEMBER_LABEL_TOKEN);
+        let space_head = group_heads
             .get(&pane.workspace_id)
-            .is_none_or(|head| head != &pane.pane_id)
-        {
-            drop_bold_identity(&mut desired);
+            .is_some_and(|head| head == &pane.pane_id);
+        if !space_head {
+            let stacked = row.shape.layout == crate::cli::SidebarLayout::Stacked;
+            let nested_child = role == VendorRow::Child && !codex_child;
+            if stacked || nested_child {
+                drop_bold_identity(&mut desired);
+            } else {
+                pack_member_label(&mut desired);
+            }
         }
         if let Some(key) = nesting.stack.get(&pane.pane_id) {
             desired.insert(STACK_TOKEN.to_string(), key.clone());
@@ -2109,12 +2120,35 @@ fn strip_flat_gauge_model_if_unused(
     }
 }
 
-/// Drop the bold provider row from a pane that does not own `$quota_group`.
+/// Put `Provider/model` on the icon's row for a pane that does not own
+/// `$quota_group`.
 ///
-/// The same `Provider/model` text moves to the unbold `$quota_model` line, and
-/// the icon stays. A bold "Codex" or "Cursor/…" left on this pane is what
-/// Herdr promotes into its own Space.
+/// `$quota_model` is a later row, which is why the label was sitting under
+/// the icon. The bold provider cell is cleared; [`MEMBER_LABEL_TOKEN`] is the
+/// unbold cell of that same row.
+fn pack_member_label(tokens: &mut BTreeMap<String, String>) {
+    let display = identity_label(tokens);
+    if !display.is_empty() {
+        tokens.insert(MEMBER_LABEL_TOKEN.to_string(), display);
+    }
+    tokens.remove("quota_provider");
+    tokens.remove("quota_provider_model");
+    tokens.remove("quota_model");
+}
+
+/// Stacked layout has no icon-row member cell. Keep the label on the unbold
+/// model row and clear the bold provider row so it is not painted as a Space.
 fn drop_bold_identity(tokens: &mut BTreeMap<String, String>) {
+    let display = identity_label(tokens);
+    if !display.is_empty() {
+        tokens.insert("quota_model".to_string(), display);
+    }
+    tokens.remove("quota_provider");
+    tokens.remove("quota_provider_model");
+    tokens.remove(MEMBER_LABEL_TOKEN);
+}
+
+fn identity_label(tokens: &BTreeMap<String, String>) -> String {
     let provider = tokens
         .get("quota_provider")
         .cloned()
@@ -2127,7 +2161,7 @@ fn drop_bold_identity(tokens: &mut BTreeMap<String, String>) {
         .get("quota_provider_model")
         .cloned()
         .filter(|value| !value.is_empty());
-    let display = match (packed.as_deref(), provider.as_deref(), model.as_deref()) {
+    match (packed.as_deref(), provider.as_deref(), model.as_deref()) {
         (Some(packed), _, _) if packed.contains('/') => packed.to_string(),
         (_, Some(provider), Some(model)) => format!("{provider}/{model}"),
         (Some(packed), _, Some(model)) if packed != model => format!("{packed}/{model}"),
@@ -2135,12 +2169,7 @@ fn drop_bold_identity(tokens: &mut BTreeMap<String, String>) {
         (_, Some(provider), None) => provider.to_string(),
         (_, None, Some(model)) => model.to_string(),
         _ => String::new(),
-    };
-    if !display.is_empty() {
-        tokens.insert("quota_model".to_string(), display);
     }
-    tokens.remove("quota_provider");
-    tokens.remove("quota_provider_model");
 }
 
 /// Vendor mark always; group header only on the Space head pane.
@@ -3491,15 +3520,17 @@ mod tests {
             VendorRow::Flat,
             None,
         );
-        // The pane is not the Space head (`w5:p1` is). The bold provider line
-        // would paint as a Space named Codex.
-        drop_bold_identity(&mut desired);
+        // The pane is not the Space head (`w5:p1` is). The bold provider
+        // cell would paint as a Space named Codex. The merged name stays on
+        // the icon's row via the unbold member cell.
+        pack_member_label(&mut desired);
 
         assert!(desired.contains_key("quota_icon"), "{desired:?}");
         assert!(!desired.contains_key("quota_provider"), "{desired:?}");
         assert!(!desired.contains_key("quota_provider_model"), "{desired:?}");
+        assert!(!desired.contains_key("quota_model"), "{desired:?}");
         assert_eq!(
-            desired.get("quota_model").map(String::as_str),
+            desired.get(MEMBER_LABEL_TOKEN).map(String::as_str),
             Some("Codex/gpt-5.6-codex")
         );
         assert_eq!(
@@ -3519,21 +3550,22 @@ mod tests {
         );
     }
 
-    /// A second vendor in the Space is not the head, so its bold name would
-    /// leave the group the same way a Codex helper does.
+    /// A second vendor in the Space is not the head. Its name stays on the
+    /// icon's row, in the unbold cell, so the row is not a new Space.
     #[test]
-    fn a_non_head_keeps_its_model_without_a_bold_provider_line() {
+    fn a_non_head_keeps_its_name_beside_the_icon() {
         let mut desired = BTreeMap::from([(
             "quota_provider_model".to_string(),
             "Cursor/claude-opus-5-5-medium".to_string(),
         )]);
-        drop_bold_identity(&mut desired);
+        pack_member_label(&mut desired);
         assert_eq!(
-            desired.get("quota_model").map(String::as_str),
+            desired.get(MEMBER_LABEL_TOKEN).map(String::as_str),
             Some("Cursor/claude-opus-5-5-medium")
         );
         assert!(!desired.contains_key("quota_provider_model"));
         assert!(!desired.contains_key("quota_provider"));
+        assert!(!desired.contains_key("quota_model"));
     }
 
     #[test]

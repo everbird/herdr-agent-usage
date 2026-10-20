@@ -383,11 +383,12 @@ one, and setting it replaces the user's own `ui.agent_panel_sort`. Rules:
    unless that Space has more than one tab or the tab has a custom label, so a
    lone automatic `1` renders as the title alone. Do not publish a metadata
    token to fill that `1`, and do not make the title row bold: an empty
-   `$quota_group` lets the next bold row paint as a Space header. The provider
-   identity row is bold too, so a pane that is not the Space head must not
-   publish `$quota_provider` or `$quota_provider_model`. The same
-   `Provider/model` text moves to the unbold `$quota_model` line, so the
-   vendor name stays readable. A bold "Codex" or "Cursor/…" on that pane is
+   `$quota_group` lets the next bold row paint as a Space header. The bold
+   provider cell shares the icon's row. A pane that is not the Space head
+   leaves `$quota_provider` and `$quota_provider_model` empty and publishes
+   the same `Provider/model` text on `$quota_member`, the unbold cell of that
+   row, so the name stays beside the icon. Do not move it onto `$quota_model`:
+   that token is a later row. A bold "Codex" or "Cursor/…" on a non-head is
    drawn as its own Space and pulls the following rows out of the group.
    `$quota_group` names the Space on the tightest pane in that workspace;
    `$quota_icon` is the vendor mark on every identity row (bundled icon font;

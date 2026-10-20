@@ -8,11 +8,11 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
-- **Sidebar grouping.** A pane that is not the Space head no longer publishes
-  the bold provider line. The same `Provider/model` text stays on the unbold
-  model line, so the vendor name remains readable. Herdr was painting that
-  bold line as its own Space, so a second Codex seat or another vendor in
-  the same Space jumped out of the group until a later refresh.
+- **Sidebar grouping.** A pane that is not the Space head keeps
+  `Provider/model` beside its icon. That text is the unbold `$quota_member`
+  cell of the identity row; the bold provider cell stays empty, so Herdr does
+  not paint the row as its own Space. The label is not moved onto the later
+  model row.
 
 ### Added
 
