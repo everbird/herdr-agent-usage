@@ -2,10 +2,10 @@ use crate::cache::CacheStore;
 use crate::cli::{AgentSelection, LowQuotaAlert};
 use crate::herdr::{
     current_focused_pane, find_agent_icon_panes, find_agent_pane, focused_pane_in_snapshot,
-    list_agent_panes, list_agent_state, plugin_quota_present, publish_icon_tokens,
-    publish_pane_tokens, publish_pane_tokens_with_scrolled_icons, publish_status_icons,
-    refresh_pane_topic, vendor_stack_keys, AgentPane, AgentStatus, PaneQuotaUpdate, PaneTokens,
-    PanelOrder, PayerEvidence, QuotaGroups, STACK_TOKEN,
+    list_agent_panes, list_agent_panes_for_icons, list_agent_state, plugin_quota_present,
+    publish_icon_tokens, publish_pane_tokens, publish_pane_tokens_with_scrolled_icons,
+    publish_status_icons, refresh_pane_topic, vendor_stack_keys, AgentPane, AgentStatus,
+    PaneQuotaUpdate, PaneTokens, PanelOrder, PayerEvidence, QuotaGroups, STACK_TOKEN,
 };
 use crate::model::{
     BillingTarget, CredentialScope, Harness, Provider, ProviderSnapshot, Resolution,
@@ -323,6 +323,7 @@ fn wait_for_watch_tick(
             break;
         }
         poll_focus_once(cache);
+        poll_working_icons_once(cache);
         thread::sleep(
             Duration::from_secs(1).min(deadline.saturating_duration_since(Instant::now())),
         );
@@ -342,6 +343,35 @@ fn poll_focus_once(cache: &CacheStore) {
     if attention.last_focused.as_deref() != Some(pane_id.as_str()) {
         let _ = paint_focus_icons(cache, Some(&pane_id));
     }
+}
+
+/// Screen-detected status can advance `state_change_seq` without a status
+/// event. Repaint yellow from that seq. Inventory `focused` is not a focus
+/// acknowledgement; that stays on the snapshot.
+fn poll_working_icons_once(cache: &CacheStore) {
+    let attention = cache.icon_attention();
+    if attention.working.is_empty() && attention.seen.is_empty() {
+        return;
+    }
+    let Ok(mut panes) = list_agent_panes_for_icons() else {
+        return;
+    };
+    let enabled = AgentSelection::from_args_or_env(&[]);
+    panes.retain(|pane| enabled.contains(&pane.harness));
+    if panes.is_empty() {
+        return;
+    }
+    if apply_icon_attention(&mut panes, cache, None, false, false).is_err() {
+        return;
+    }
+    let dirty = panes
+        .into_iter()
+        .filter(|pane| pane.tokens.contains_key("quota_icon") && pane.icon_needs_update())
+        .collect::<Vec<_>>();
+    if dirty.is_empty() {
+        return;
+    }
+    let _ = publish_icon_tokens(&dirty, CacheStore::now_millis());
 }
 
 /// Refresh working, settling, or expired-quota targets, then publish that
@@ -613,6 +643,7 @@ fn apply_icon_attention(
         attention.working.retain(|id| live.contains(id));
         attention.unseen.retain(|id| live.contains(id));
         attention.seen.retain(|id| live.contains(id));
+        attention.seen_seq.retain(|id, _| live.contains(id));
     }
     if hydrate {
         for pane in panes.iter() {
@@ -646,27 +677,34 @@ fn apply_icon_attention(
             // unseen completion on the next idle watch pass.
             if green_on_screen {
                 attention.unseen.remove(&pane.pane_id);
-                attention.seen.insert(pane.pane_id.clone());
+                note_seen(&mut attention, pane);
                 attention.working.remove(&pane.pane_id);
                 pane.status = AgentStatus::Idle;
                 continue;
             }
             if !pane.status.is_working() {
                 attention.unseen.remove(&pane.pane_id);
-                attention.seen.insert(pane.pane_id.clone());
+                note_seen(&mut attention, pane);
             }
         }
         if pane.status.is_working() {
-            // Inventory may continue saying `working` after a completed pane
-            // was acknowledged. Only a fresh working status event starts a
-            // new turn; polling the stale inventory must keep the icon white.
-            if attention.seen.contains(&pane.pane_id) && !working_event {
+            // The same `state_change_seq` after an acknowledgement is the
+            // working streak the user already saw. A newer seq is a new turn,
+            // including a Codex screen-detection change that never arrived as
+            // a status event. Missing seqs stay on the old "event only" rule.
+            let acknowledged = attention.seen_seq.get(&pane.pane_id).copied();
+            let same_streak = match acknowledged {
+                Some(seq) => pane.state_change_seq <= seq,
+                None => pane.state_change_seq == 0,
+            };
+            let stale = !working_event && attention.seen.contains(&pane.pane_id) && same_streak;
+            if stale {
                 pane.status = AgentStatus::Idle;
                 continue;
             }
             attention.working.insert(pane.pane_id.clone());
             attention.unseen.remove(&pane.pane_id);
-            attention.seen.remove(&pane.pane_id);
+            forget_seen(&mut attention, &pane.pane_id);
             continue;
         }
         if !matches!(pane.status, AgentStatus::Idle | AgentStatus::Done) {
@@ -675,14 +713,14 @@ fn apply_icon_attention(
         let was_working = attention.working.remove(&pane.pane_id)
             || (!attention.seen.contains(&pane.pane_id) && tokens_show_working_icon(&pane.tokens));
         if was_working {
-            attention.seen.remove(&pane.pane_id);
+            forget_seen(&mut attention, &pane.pane_id);
             attention.unseen.insert(pane.pane_id.clone());
         } else if pane.status == AgentStatus::Done && !attention.seen.contains(&pane.pane_id) {
             attention.unseen.insert(pane.pane_id.clone());
         }
         if acknowledge {
             attention.unseen.remove(&pane.pane_id);
-            attention.seen.insert(pane.pane_id.clone());
+            note_seen(&mut attention, pane);
         }
         pane.status = if attention.unseen.contains(&pane.pane_id) {
             AgentStatus::Done
@@ -693,7 +731,22 @@ fn apply_icon_attention(
     if let Some(pane_id) = force_seen {
         attention.last_focused = Some(pane_id.to_owned());
     }
+    attention
+        .seen_seq
+        .retain(|id, _| attention.seen.contains(id));
     cache.set_icon_attention(&attention)
+}
+
+fn note_seen(attention: &mut crate::cache::IconAttention, pane: &AgentPane) {
+    attention.seen.insert(pane.pane_id.clone());
+    attention
+        .seen_seq
+        .insert(pane.pane_id.clone(), pane.state_change_seq);
+}
+
+fn forget_seen(attention: &mut crate::cache::IconAttention, pane_id: &str) {
+    attention.seen.remove(pane_id);
+    attention.seen_seq.remove(pane_id);
 }
 
 fn paint_focus_icons(cache: &CacheStore, force_idle_id: Option<&str>) -> Result<()> {
@@ -2152,6 +2205,7 @@ mod tests {
             tokens: BTreeMap::new(),
             status: AgentStatus::Idle,
             focused: false,
+            state_change_seq: 0,
         }
     }
 
@@ -4358,6 +4412,68 @@ mod tests {
         assert_eq!(pane.icon_status(), AgentStatus::Idle);
         pane.status = AgentStatus::Working;
         apply_icon_attention(std::slice::from_mut(&mut pane), &cache, None, false, true).unwrap();
+        assert_eq!(pane.icon_status(), AgentStatus::Working);
+    }
+
+    #[test]
+    fn a_newer_working_seq_paints_yellow_without_a_status_event() {
+        let dir = tempdir().unwrap();
+        let cache = CacheStore::new(dir.path());
+        let mut pane = test_pane("wC:pH", Harness::Codex);
+        pane.focused = true;
+        pane.status = AgentStatus::Idle;
+        pane.state_change_seq = 4;
+        apply_icon_attention(
+            std::slice::from_mut(&mut pane),
+            &cache,
+            Some("wC:pH"),
+            false,
+            false,
+        )
+        .unwrap();
+        assert_eq!(cache.icon_attention().seen_seq.get("wC:pH"), Some(&4));
+
+        // Codex screen detection advances the seq when the turn starts. The
+        // status hook may not reach this process; the icon still goes yellow.
+        pane.status = AgentStatus::Working;
+        pane.state_change_seq = 5;
+        apply_icon_attention(std::slice::from_mut(&mut pane), &cache, None, false, false).unwrap();
+        assert_eq!(pane.icon_status(), AgentStatus::Working);
+        assert!(cache.icon_attention().working.contains("wC:pH"));
+        assert!(!cache.icon_attention().seen.contains("wC:pH"));
+    }
+
+    #[test]
+    fn the_acknowledged_working_seq_stays_white() {
+        let dir = tempdir().unwrap();
+        let cache = CacheStore::new(dir.path());
+        let mut pane = test_pane("wC:pH", Harness::Codex);
+        pane.focused = true;
+        pane.status = AgentStatus::Working;
+        pane.state_change_seq = 7;
+        let mut attention = cache.icon_attention();
+        attention.unseen.insert("wC:pH".into());
+        cache.set_icon_attention(&attention).unwrap();
+
+        apply_icon_attention(
+            std::slice::from_mut(&mut pane),
+            &cache,
+            Some("wC:pH"),
+            false,
+            false,
+        )
+        .unwrap();
+        assert_eq!(pane.icon_status(), AgentStatus::Idle);
+        assert_eq!(cache.icon_attention().seen_seq.get("wC:pH"), Some(&7));
+
+        pane.status = AgentStatus::Working;
+        pane.state_change_seq = 7;
+        apply_icon_attention(std::slice::from_mut(&mut pane), &cache, None, false, false).unwrap();
+        assert_eq!(pane.icon_status(), AgentStatus::Idle);
+
+        pane.status = AgentStatus::Working;
+        pane.state_change_seq = 8;
+        apply_icon_attention(std::slice::from_mut(&mut pane), &cache, None, false, false).unwrap();
         assert_eq!(pane.icon_status(), AgentStatus::Working);
     }
 
