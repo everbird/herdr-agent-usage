@@ -104,6 +104,10 @@ pub enum Command {
         /// install.sh passes this through $HERDR_AGENT_QUOTA_SIDEBAR_LAYOUT.
         #[arg(long, value_enum)]
         sidebar_layout: Option<SidebarLayout>,
+        /// Replace the topic line with the pane's scrolling terminal title.
+        /// Off keeps the extracted topic. On by default.
+        #[arg(long, value_enum)]
+        pane_titles: Option<PaneTitles>,
         /// Whether quota percentages read as remaining (default) or used.
         /// Herdr plugin actions run a fixed command line, so install.sh
         /// passes this through $HERDR_AGENT_QUOTA_PERCENT.
@@ -222,6 +226,42 @@ pub enum SidebarLayout {
     Packed,
     /// One field per row (provider, model, cache, TTL, context, 5h, 7d).
     Stacked,
+}
+
+/// Whether managed sidebar rows show each pane's terminal title.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, clap::ValueEnum)]
+pub enum PaneTitles {
+    #[default]
+    On,
+    Off,
+}
+
+impl PaneTitles {
+    pub const ENV: &'static str = "HERDR_AGENT_QUOTA_PANE_TITLES";
+
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::On => "on",
+            Self::Off => "off",
+        }
+    }
+
+    pub fn parse(value: &str) -> Option<Self> {
+        match value.trim().to_ascii_lowercase().as_str() {
+            "on" | "true" => Some(Self::On),
+            "off" | "false" => Some(Self::Off),
+            _ => None,
+        }
+    }
+
+    pub fn from_arg_or_env(value: Option<Self>) -> Option<Self> {
+        value.or_else(|| {
+            std::env::var(Self::ENV)
+                .ok()
+                .as_deref()
+                .and_then(Self::parse)
+        })
+    }
 }
 
 /// A quota field the sidebar can be told to leave out.
@@ -517,6 +557,7 @@ impl BrandColors {
 pub struct ConfigureOptions {
     pub watch_interval_seconds: Option<u64>,
     pub sidebar_layout: Option<SidebarLayout>,
+    pub pane_titles: Option<PaneTitles>,
     pub quota_percent: Option<PercentStyle>,
     pub sidebar_pacing: Option<SidebarPacing>,
     pub statusline_pace: Option<StatuslinePace>,
@@ -1433,6 +1474,18 @@ mod tests {
         assert_eq!(
             SidebarLayout::from_arg_or_env(Some(SidebarLayout::Stacked)),
             Some(SidebarLayout::Stacked)
+        );
+    }
+
+    #[test]
+    fn pane_titles_default_on_and_parse_values() {
+        assert_eq!(PaneTitles::default(), PaneTitles::On);
+        assert_eq!(PaneTitles::parse(" on "), Some(PaneTitles::On));
+        assert_eq!(PaneTitles::parse("OFF"), Some(PaneTitles::Off));
+        assert_eq!(PaneTitles::parse("junk"), None);
+        assert_eq!(
+            PaneTitles::from_arg_or_env(Some(PaneTitles::Off)),
+            Some(PaneTitles::Off)
         );
     }
 

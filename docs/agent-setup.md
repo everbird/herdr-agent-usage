@@ -12,8 +12,8 @@ icons, model, context, and subscription quota for the agent CLIs this computer
 actually has.
 
 **Done** means the sidebar works. `./install.sh` exiting 0 is only the first
-step. Boxes, `?` icons, missing quota, and skipped Herdr integrations mean you
-are not finished.
+step. Boxes, `?` icons, missing quota, and a Herdr integration that is
+`not installed` or `outdated` mean you are not finished.
 
 If this working tree is already the repo, use it. Otherwise:
 
@@ -138,7 +138,7 @@ Muse do not.
 herdr integration status
 ```
 
-For each **detected** agent whose line is `not installed`, run
+For each **detected** agent whose line is `not installed` or `outdated`, run
 `herdr integration install <id>`:
 
 `claude`, `codex`, `grok`, `opencode`, `pi`, `omp`, `devin`, `cursor`, `kilo`. MiMo has no Herdr integration; it is reported as a custom `mimo` agent (for example by mimo-code-herdr).
@@ -259,7 +259,7 @@ Hooks and integrations load at session start:
 | Symptom | What to do |
 | --- | --- |
 | Plugin missing / sidebar rows missing | `./install.sh` again, then `configure`. Do not hand-edit Herdr `config.toml` quota rows. |
-| Integration `not installed` | `herdr integration install <id>`, restart that pane. |
+| Integration `not installed` or `outdated` | `herdr integration install <id>`, restart that pane. Herdr 0.9.5 reports Codex `outdated` until this runs; it no longer installs Codex turn hooks. |
 | Claude/Agy quota empty | One turn in that session. |
 | OMP quota empty | `omp usage --json --redact --provider <id>` must work. |
 | Cursor quota empty or stuck on an old account | `cursor login` / `cursor-agent login`, then Keychain **Always Allow** as above. |
