@@ -175,8 +175,8 @@ impl Settings {
                 },
             },
             Choice::PaneTitles => match self.pane_titles {
-                PaneTitles::On => "show per-pane terminal titles",
-                PaneTitles::Off => "hide per-pane terminal titles",
+                PaneTitles::On => "scrolling terminal title replaces topic",
+                PaneTitles::Off => "keep the extracted topic",
             },
             Choice::RowGap => match self.gap.as_u8() {
                 0 => "panes packed flush",

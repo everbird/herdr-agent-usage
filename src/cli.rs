@@ -104,7 +104,8 @@ pub enum Command {
         /// install.sh passes this through $HERDR_AGENT_QUOTA_SIDEBAR_LAYOUT.
         #[arg(long, value_enum)]
         sidebar_layout: Option<SidebarLayout>,
-        /// Show each pane's terminal title above provider/model. On by default.
+        /// Replace the topic line with the pane's scrolling terminal title.
+        /// Off keeps the extracted topic. On by default.
         #[arg(long, value_enum)]
         pane_titles: Option<PaneTitles>,
         /// Whether quota percentages read as remaining (default) or used.

@@ -647,7 +647,7 @@ fn build_managed_rows(
             if let Some(original) = original {
                 for row in original {
                     let cleaned = strip_quota_tokens(row);
-                    if original_is_managed && is_managed_pane_title_row(&cleaned) {
+                    if original_is_managed && is_managed_caption_row(&cleaned) {
                         continue;
                     }
                     if cleaned.is_empty() {
@@ -675,19 +675,14 @@ fn build_managed_rows(
         })
     });
     let mut updated_rows = preserved;
-    append_quota_rows(&mut updated_rows, layout);
-    if pane_titles == PaneTitles::On && !has_user_title {
-        // Native Herdr token: /rename updates without pane reads or metadata writes.
-        updated_rows.insert(
-            user_count + 1,
-            Value::Array(styled_row(
-                "terminal_title_stripped",
-                None,
-                Some(true),
-                Some(false),
-            )),
-        );
-    }
+    // A title the user already drew stays theirs. Ours only replaces the topic
+    // line, so the two never stack.
+    let topic_line = if pane_titles == PaneTitles::On && !has_user_title {
+        PaneTitles::On
+    } else {
+        PaneTitles::Off
+    };
+    append_quota_rows(&mut updated_rows, layout, topic_line);
     // Keep `$quota_group` first so Space aggregation stays the head row;
     // user-owned extras (pane/git/other plugins) sit directly under it.
     if user_count > 0 {
@@ -710,19 +705,62 @@ fn build_managed_rows(
     Ok(updated_rows)
 }
 
-// Remove only our exact styled row from a marked managed layout.
-// User-authored unmarked title rows remain untouched.
+fn is_managed_caption_row(row: &Array) -> bool {
+    is_managed_pane_title_row(row) || is_managed_tab_row(row) || is_managed_tab_topic_row(row)
+}
+
+// Remove only the caption rows this plugin wrote. A user row that also names
+// pane, git, or anything else stays. The lone-token shapes are earlier
+// revisions; the current caption is tab and the topic on one row.
 fn is_managed_pane_title_row(row: &Array) -> bool {
-    if row.len() != 1 {
-        return false;
-    }
-    let Some(value) = row.get(0).and_then(Value::as_inline_table) else {
+    let Some(value) = lone_styled_token(row) else {
         return false;
     };
+    // The first revision was a bold line above the provider. That weight is
+    // what Herdr paints as a Space header once an empty `$quota_group`
+    // collapses. The topic-slot revision is the same token, not bold.
+    is_managed_title_cell(value)
+}
+
+fn is_managed_tab_row(row: &Array) -> bool {
+    let Some(value) = lone_styled_token(row) else {
+        return false;
+    };
+    is_dim_tab_cell(value)
+}
+
+fn is_managed_tab_topic_row(row: &Array) -> bool {
+    if row.len() != 2 {
+        return false;
+    }
+    let Some(tab) = row.get(0).and_then(Value::as_inline_table) else {
+        return false;
+    };
+    let Some(title) = row.get(1).and_then(Value::as_inline_table) else {
+        return false;
+    };
+    is_dim_tab_cell(tab) && is_managed_title_cell(title)
+}
+
+fn is_dim_tab_cell(value: &InlineTable) -> bool {
+    value.len() == 3
+        && value.get("token").and_then(Value::as_str) == Some("tab")
+        && value.get("bold").and_then(Value::as_bool) == Some(false)
+        && value.get("dim").and_then(Value::as_bool) == Some(true)
+}
+
+fn is_managed_title_cell(value: &InlineTable) -> bool {
     value.len() == 3
         && value.get("token").and_then(Value::as_str) == Some("terminal_title_stripped")
-        && value.get("bold").and_then(Value::as_bool) == Some(true)
         && value.get("dim").and_then(Value::as_bool) == Some(false)
+        && value.get("bold").and_then(Value::as_bool).is_some()
+}
+
+fn lone_styled_token(row: &Array) -> Option<&InlineTable> {
+    if row.len() != 1 {
+        return None;
+    }
+    row.get(0).and_then(Value::as_inline_table)
 }
 
 // Recognize only the tab styling written by older plugin versions. A managed
@@ -859,7 +897,7 @@ pub fn remove_quota_row_for(input: &str, agents: &[Harness], full: bool) -> Resu
         let mut retained = Array::new();
         for row in rows.iter() {
             let cleaned = strip_quota_tokens(row);
-            if managed_rows && is_managed_pane_title_row(&cleaned) {
+            if managed_rows && is_managed_caption_row(&cleaned) {
                 continue;
             }
             if !cleaned.is_empty() {
@@ -1108,11 +1146,11 @@ fn is_standalone_agent_row(row: &Array) -> bool {
     row.len() == 1 && row.get(0).and_then(Value::as_str) == Some("agent")
 }
 
-fn append_quota_rows(rows: &mut Array, layout: SidebarLayout) {
+fn append_quota_rows(rows: &mut Array, layout: SidebarLayout, pane_titles: PaneTitles) {
     // Group header first: empty on non-head panes so Herdr collapses the row.
-    // The stock machine/workspace/tab identity is omitted on purpose — the
-    // group header is the Space name, and repeating it on every pane is what
-    // made the list look ungrouped.
+    // The stock machine/workspace identity stays omitted — the group header is
+    // the Space name, and repeating it on every pane is what made the list
+    // look ungrouped. The tab name shares the topic line, in front of it.
     rows.push(Value::Array(styled_row(
         "$quota_group",
         None,
@@ -1131,24 +1169,14 @@ fn append_quota_rows(rows: &mut Array, layout: SidebarLayout) {
                 Some(false),
                 Some(false),
             )));
-            rows.push(Value::Array(styled_row(
-                "$quota_topic",
-                None,
-                Some(false),
-                Some(false),
-            )));
+            append_topic_row(rows, pane_titles);
             append_cache_error_and_context_rows(rows, layout);
             append_window_rows(rows, layout);
             append_pack_gap_row(rows);
         }
         SidebarLayout::Packed => {
             append_identity_row(rows);
-            rows.push(Value::Array(styled_row(
-                "$quota_topic",
-                None,
-                Some(false),
-                Some(false),
-            )));
+            append_topic_row(rows, pane_titles);
             append_packed_quota_rows(rows);
             append_pack_gap_row(rows);
         }
@@ -1160,16 +1188,31 @@ fn append_quota_rows(rows: &mut Array, layout: SidebarLayout) {
                 Some(false),
                 Some(false),
             )));
-            rows.push(Value::Array(styled_row(
-                "$quota_topic",
-                None,
-                Some(false),
-                Some(false),
-            )));
+            append_topic_row(rows, pane_titles);
             append_stacked_quota_rows(rows, layout);
             append_pack_gap_row(rows);
         }
     }
+}
+
+/// Tab name, then the topic, on one line. Herdr joins the cells with ` · `.
+///
+/// The tab stays dim and on this line, never as its own bold row. Herdr
+/// collapses an empty `$quota_group` and paints the next bold row as a Space
+/// header, which is how a tab stacks in series with Spaces.
+///
+/// The scrolling terminal title occupies the topic cell. It is the same fact
+/// as `$quota_topic` for these panes, and the native token is the one Herdr
+/// marquee-scrolls. Off keeps the extracted topic.
+fn append_topic_row(rows: &mut Array, pane_titles: PaneTitles) {
+    let token = match pane_titles {
+        PaneTitles::On => "terminal_title_stripped",
+        PaneTitles::Off => "$quota_topic",
+    };
+    let mut row = Array::new();
+    row.push(styled_token("tab", None, Some(false), Some(true)));
+    row.push(styled_token(token, None, Some(false), Some(false)));
+    rows.push(Value::Array(row));
 }
 
 fn append_pack_gap_row(rows: &mut Array) {
@@ -1359,6 +1402,14 @@ fn retain_selected_fields(rows: &mut Array, fields: FieldSet) {
         };
         let mut retained = Array::new();
         for item in items.iter() {
+            // The scrolling title stands in for the topic. Hiding topic drops
+            // that cell and leaves the tab. A user title mixed with pane or
+            // git is not this cell.
+            if !fields.contains(SidebarField::Topic)
+                && item.as_inline_table().is_some_and(is_managed_title_cell)
+            {
+                continue;
+            }
             // `$quota_provider_model` carries two fields on one token, so
             // `field_for_token` cannot decide it: hiding the model degrades it
             // to the provider, hiding the provider degrades it to the model,
@@ -1812,11 +1863,36 @@ mod tests {
                 .iter()
                 .position(|row| row_contains_token(row, "terminal_title_stripped"))
                 .unwrap();
-            assert_eq!(title, 1, "{on}");
+            let identity = rows
+                .iter()
+                .position(|row| row_contains_token(row, "$quota_icon"))
+                .unwrap();
+            let tab = rows
+                .iter()
+                .position(|row| row_contains_token(row, "tab"))
+                .unwrap();
             assert!(row_is_only_token(rows, "$quota_group"), "{on}");
+            assert_eq!(identity, 1, "icon stays the first pane line:\n{on}");
+            assert_eq!(title, tab, "tab and the title share one row:\n{on}");
+            assert!(title > identity, "{on}");
+            assert!(!on.contains("$quota_topic"), "{on}");
+            let caption = rows.get(title).unwrap().as_array().unwrap();
+            assert_eq!(caption.len(), 2, "{on}");
+            let tab_cell = caption.get(0).and_then(Value::as_inline_table).unwrap();
+            let title_cell = caption.get(1).and_then(Value::as_inline_table).unwrap();
+            assert_eq!(tab_cell.get("token").and_then(Value::as_str), Some("tab"));
+            assert_eq!(tab_cell.get("bold").and_then(Value::as_bool), Some(false));
+            assert_eq!(tab_cell.get("dim").and_then(Value::as_bool), Some(true));
+            assert_eq!(
+                title_cell.get("token").and_then(Value::as_str),
+                Some("terminal_title_stripped")
+            );
+            assert_eq!(title_cell.get("bold").and_then(Value::as_bool), Some(false));
 
             let off = rewrite(&on, layout, PaneTitles::Off);
             assert!(!off.contains("terminal_title_stripped"), "{off}");
+            assert!(off.contains("$quota_topic"), "{off}");
+            assert_eq!(off.matches("token = \"tab\"").count(), 1, "{off}");
             assert_eq!(rewrite(&off, layout, PaneTitles::Off), off);
             assert_eq!(rewrite(&off, layout, PaneTitles::On), on);
             let uninstalled = remove_quota_row(&on).unwrap();
@@ -2114,6 +2190,10 @@ rows = [["state_icon", "agent"]]
             .iter()
             .position(|row| row_contains_token(row, "$quota_provider"))
             .unwrap();
+        let tab_index = rows
+            .iter()
+            .position(|row| row_contains_token(row, "tab"))
+            .unwrap();
         let model_index = rows
             .iter()
             .position(|row| row_contains_token(row, "$quota_model"))
@@ -2126,6 +2206,7 @@ rows = [["state_icon", "agent"]]
         assert_eq!(identity_index, provider_index);
         assert_eq!(provider_index + 1, model_index);
         assert_eq!(model_index + 1, topic_index);
+        assert_eq!(tab_index, topic_index, "tab shares the topic row");
         assert!(!rows
             .iter()
             .any(|row| row_contains_token(row, "$quota_provider_model")));
@@ -2352,8 +2433,9 @@ rows = [["state_icon", "agent"]]
     }
 
     /// The bytes `packed` and `stacked` write for the agents that existed
-    /// before Muse. A 30d row was added after gauges; these digests track that
-    /// template. An agent added since only appends its own row style.
+    /// before Muse. A 30d row was added after gauges, and the dim tab shares
+    /// the topic line; these digests track that template. An agent
+    /// added since only appends its own row style.
     #[test]
     fn packed_and_stacked_write_the_same_bytes_as_before_gauges() {
         use sha2::{Digest, Sha256};
@@ -2365,22 +2447,22 @@ rows = [["state_icon", "agent"]]
             (
                 "",
                 [
-                    "968a9be02158fe4b5833005047630bb02b3307a54d4a25f70025b95acdb33ddf",
-                    "99ca8c9d94dc74d118912dad635dcbe8192e44dec2915615dd72e1b3d0f79491",
+                    "f2939ab3211906c573d0bf312d7285c88ad39dc99458770b6fdd84a308c29377",
+                    "6ee4dda7e2a613580ff4b7f7582f8b554d8bae9f2fd64fce9d94e015d6fb4172",
                 ],
             ),
             (
                 "[ui.sidebar.agents]\nrows = [[\"state_icon\", \"machine\", \"workspace\", \"tab\"], [\"agent\"]]\n",
                 [
-                    "c789fc538136af25fbd022bccb1187e033b8d007e518f4004d5a98f8f95a1259",
-                    "cd148107f981ace3825d5949ca85b1e8a54ce477302bc6bbb1132a9fc6e511e7",
+                    "629c652cf994c499689d2c74d31569e5b46a2380cb7de24c5a59b07a4e346696",
+                    "9310e109c5b0612f29bfe43cfb227a0209eea60481ef3d0d0a7b6aaf267f8da7",
                 ],
             ),
             (
                 "[ui.sidebar.agents]\nrows = [[\"state_icon\", { token = \"tab\", bold = true }, \"$quota_provider_model\"], [\"$quota_topic\"]] # herdr-agent-quota-row\n",
                 [
-                    "c789fc538136af25fbd022bccb1187e033b8d007e518f4004d5a98f8f95a1259",
-                    "cd148107f981ace3825d5949ca85b1e8a54ce477302bc6bbb1132a9fc6e511e7",
+                    "629c652cf994c499689d2c74d31569e5b46a2380cb7de24c5a59b07a4e346696",
+                    "9310e109c5b0612f29bfe43cfb227a0209eea60481ef3d0d0a7b6aaf267f8da7",
                 ],
             ),
         ] {

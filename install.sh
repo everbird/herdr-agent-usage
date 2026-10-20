@@ -23,8 +23,9 @@
 # packed joins cache/TTL and 5h/7d on one row. stacked puts provider, model,
 # cache, TTL, context, 5h, and 7d on their own rows without meters.
 #
-# --pane-titles on (default) displays terminal titles above provider/model.
-# off restores the previous quota-only layout.
+# --pane-titles on (default) replaces the topic with the scrolling terminal
+# title. off keeps the extracted topic. Either way the tab name shares that
+# line, in front of the text.
 #
 # --row-gap 1 (default) leaves one blank row between agent panes; 0 packs them
 # flush. Herdr only accepts whole rows.
