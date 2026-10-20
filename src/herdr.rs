@@ -2111,25 +2111,33 @@ fn strip_flat_gauge_model_if_unused(
 
 /// Drop the bold provider row from a pane that does not own `$quota_group`.
 ///
-/// The model stays on the unbold `$quota_model` line, and the icon stays, so
-/// the seat is still identifiable. A bold "Codex" or "Cursor/…" left here is
-/// what Herdr promotes into its own Space.
+/// The same `Provider/model` text moves to the unbold `$quota_model` line, and
+/// the icon stays. A bold "Codex" or "Cursor/…" left on this pane is what
+/// Herdr promotes into its own Space.
 fn drop_bold_identity(tokens: &mut BTreeMap<String, String>) {
+    let provider = tokens
+        .get("quota_provider")
+        .cloned()
+        .filter(|value| !value.is_empty());
     let model = tokens
         .get("quota_model")
         .cloned()
-        .filter(|value| !value.is_empty())
-        .or_else(|| {
-            tokens.get("quota_provider_model").and_then(|label| {
-                let name = label
-                    .split_once('/')
-                    .map(|(_, model)| model.trim())
-                    .unwrap_or(label.trim());
-                (!name.is_empty()).then(|| name.to_string())
-            })
-        });
-    if let Some(model) = model {
-        tokens.insert("quota_model".to_string(), model);
+        .filter(|value| !value.is_empty());
+    let packed = tokens
+        .get("quota_provider_model")
+        .cloned()
+        .filter(|value| !value.is_empty());
+    let display = match (packed.as_deref(), provider.as_deref(), model.as_deref()) {
+        (Some(packed), _, _) if packed.contains('/') => packed.to_string(),
+        (_, Some(provider), Some(model)) => format!("{provider}/{model}"),
+        (Some(packed), _, Some(model)) if packed != model => format!("{packed}/{model}"),
+        (Some(packed), _, _) => packed.to_string(),
+        (_, Some(provider), None) => provider.to_string(),
+        (_, None, Some(model)) => model.to_string(),
+        _ => String::new(),
+    };
+    if !display.is_empty() {
+        tokens.insert("quota_model".to_string(), display);
     }
     tokens.remove("quota_provider");
     tokens.remove("quota_provider_model");
@@ -3492,7 +3500,7 @@ mod tests {
         assert!(!desired.contains_key("quota_provider_model"), "{desired:?}");
         assert_eq!(
             desired.get("quota_model").map(String::as_str),
-            Some("gpt-5.6-codex")
+            Some("Codex/gpt-5.6-codex")
         );
         assert_eq!(
             desired.get("quota_context_normal").map(String::as_str),
@@ -3522,7 +3530,7 @@ mod tests {
         drop_bold_identity(&mut desired);
         assert_eq!(
             desired.get("quota_model").map(String::as_str),
-            Some("claude-opus-5-5-medium")
+            Some("Cursor/claude-opus-5-5-medium")
         );
         assert!(!desired.contains_key("quota_provider_model"));
         assert!(!desired.contains_key("quota_provider"));
