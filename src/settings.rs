@@ -13,8 +13,8 @@
 
 use crate::cache::CacheStore;
 use crate::cli::{
-    AgentOrder, AgentSelection, FieldSet, LowQuotaAlert, PaneTitles, PercentStyle, SidebarField, SidebarLayout,
-    SidebarPacing, SidebarRowGap, StatuslinePace,
+    AgentOrder, AgentSelection, FieldSet, LowQuotaAlert, PaneTitles, PercentStyle, SidebarField,
+    SidebarLayout, SidebarPacing, SidebarRowGap, StatuslinePace,
 };
 use crate::model::Harness;
 use crate::prefs;

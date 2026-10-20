@@ -157,8 +157,15 @@ pub fn check(
 ) -> Result<()> {
     let path = config_path()?;
     let original = fs::read_to_string(&path).unwrap_or_default();
-    let (updated, skipped) =
-        rewrite_quota_sidebar_with_titles(&original, agents, layout, row_gap, fields, brand, pane_titles)?;
+    let (updated, skipped) = rewrite_quota_sidebar_with_titles(
+        &original,
+        agents,
+        layout,
+        row_gap,
+        fields,
+        brand,
+        pane_titles,
+    )?;
     if updated == original {
         println!(
             "Herdr sidebar already contains quota tokens: {}",
@@ -189,8 +196,15 @@ pub fn apply(
     let path = config_path()?;
     let existed = path.exists();
     let original = fs::read_to_string(&path).unwrap_or_default();
-    let (updated, skipped) =
-        rewrite_quota_sidebar(&original, agents, layout, row_gap, fields, brand)?;
+    let (updated, skipped) = rewrite_quota_sidebar_with_titles(
+        &original,
+        agents,
+        layout,
+        row_gap,
+        fields,
+        brand,
+        pane_titles,
+    )?;
     if let Some(line) = skipped_provider_notice(&skipped) {
         println!("{line}");
     }
@@ -488,7 +502,15 @@ fn rewrite_quota_sidebar(
     fields: FieldSet,
     brand: BrandColors,
 ) -> Result<(String, Vec<&'static str>)> {
-    rewrite_quota_sidebar_with_titles(input, agents, layout, row_gap, fields, brand, PaneTitles::Off)
+    rewrite_quota_sidebar_with_titles(
+        input,
+        agents,
+        layout,
+        row_gap,
+        fields,
+        brand,
+        PaneTitles::Off,
+    )
 }
 
 pub fn add_quota_row_with_titles(

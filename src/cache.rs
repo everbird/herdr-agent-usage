@@ -1,6 +1,6 @@
 use crate::cli::{
-    AgentOrder, BrandColors, FieldSet, LowQuotaAlert, PaneTitles, PercentStyle, SidebarLayout, SidebarPacing,
-    SidebarRowGap, StatuslinePace,
+    AgentOrder, BrandColors, FieldSet, LowQuotaAlert, PaneTitles, PercentStyle, SidebarLayout,
+    SidebarPacing, SidebarRowGap, StatuslinePace,
 };
 use crate::identity::PLUGIN_ID;
 use crate::model::{
