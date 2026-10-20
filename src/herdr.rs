@@ -1223,6 +1223,17 @@ fn publish_pane_tokens_inner(
             &pane.pane_id,
             pack_gap_enabled(),
         );
+        // `$quota_provider_model` is a bold row. Herdr collapses an empty
+        // `$quota_group` and paints the next bold row as a Space, so a Codex
+        // helper or a second vendor in the same Space jumps out of the group
+        // until some later publish happens to move the header. Only the Space
+        // head may keep that row.
+        if group_heads
+            .get(&pane.workspace_id)
+            .is_none_or(|head| head != &pane.pane_id)
+        {
+            drop_bold_identity(&mut desired);
+        }
         if let Some(key) = nesting.stack.get(&pane.pane_id) {
             desired.insert(STACK_TOKEN.to_string(), key.clone());
         }
@@ -2096,6 +2107,32 @@ fn strip_flat_gauge_model_if_unused(
     if !model_only_identity {
         desired.remove("quota_model");
     }
+}
+
+/// Drop the bold provider row from a pane that does not own `$quota_group`.
+///
+/// The model stays on the unbold `$quota_model` line, and the icon stays, so
+/// the seat is still identifiable. A bold "Codex" or "Cursor/…" left here is
+/// what Herdr promotes into its own Space.
+fn drop_bold_identity(tokens: &mut BTreeMap<String, String>) {
+    let model = tokens
+        .get("quota_model")
+        .cloned()
+        .filter(|value| !value.is_empty())
+        .or_else(|| {
+            tokens.get("quota_provider_model").and_then(|label| {
+                let name = label
+                    .split_once('/')
+                    .map(|(_, model)| model.trim())
+                    .unwrap_or(label.trim());
+                (!name.is_empty()).then(|| name.to_string())
+            })
+        });
+    if let Some(model) = model {
+        tokens.insert("quota_model".to_string(), model);
+    }
+    tokens.remove("quota_provider");
+    tokens.remove("quota_provider_model");
 }
 
 /// Vendor mark always; group header only on the Space head pane.
@@ -3446,16 +3483,13 @@ mod tests {
             VendorRow::Flat,
             None,
         );
+        // The pane is not the Space head (`w5:p1` is). The bold provider line
+        // would paint as a Space named Codex.
+        drop_bold_identity(&mut desired);
 
         assert!(desired.contains_key("quota_icon"), "{desired:?}");
-        assert_eq!(
-            desired.get("quota_provider").map(String::as_str),
-            Some("Codex")
-        );
-        assert_eq!(
-            desired.get("quota_provider_model").map(String::as_str),
-            Some("Codex")
-        );
+        assert!(!desired.contains_key("quota_provider"), "{desired:?}");
+        assert!(!desired.contains_key("quota_provider_model"), "{desired:?}");
         assert_eq!(
             desired.get("quota_model").map(String::as_str),
             Some("gpt-5.6-codex")
@@ -3475,6 +3509,23 @@ mod tests {
             desired.keys().all(|name| !name.starts_with("quota_share_")),
             "{desired:?}"
         );
+    }
+
+    /// A second vendor in the Space is not the head, so its bold name would
+    /// leave the group the same way a Codex helper does.
+    #[test]
+    fn a_non_head_keeps_its_model_without_a_bold_provider_line() {
+        let mut desired = BTreeMap::from([(
+            "quota_provider_model".to_string(),
+            "Cursor/claude-opus-5-5-medium".to_string(),
+        )]);
+        drop_bold_identity(&mut desired);
+        assert_eq!(
+            desired.get("quota_model").map(String::as_str),
+            Some("claude-opus-5-5-medium")
+        );
+        assert!(!desired.contains_key("quota_provider_model"));
+        assert!(!desired.contains_key("quota_provider"));
     }
 
     #[test]

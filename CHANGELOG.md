@@ -6,6 +6,13 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Fixed
+
+- **Sidebar grouping.** A pane that is not the Space head no longer publishes
+  the bold provider line. Herdr was painting that line as its own Space, so a
+  second Codex seat or another vendor in the same Space jumped out of the
+  group until a later refresh.
+
 ### Added
 
 - **Pane titles.** On by default. The topic line is the tab name, then the
