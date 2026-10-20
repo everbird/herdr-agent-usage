@@ -1,5 +1,5 @@
 use crate::cli::{
-    AgentSelection, BrandColors, FieldSet, SidebarField, SidebarLayout, SidebarRowGap,
+    AgentSelection, BrandColors, FieldSet, PaneTitles, SidebarField, SidebarLayout, SidebarRowGap,
 };
 use crate::identity::{self, PLUGIN_ID};
 use crate::model::Harness;
@@ -153,11 +153,12 @@ pub fn check(
     row_gap: SidebarRowGap,
     fields: FieldSet,
     brand: BrandColors,
+    pane_titles: PaneTitles,
 ) -> Result<()> {
     let path = config_path()?;
     let original = fs::read_to_string(&path).unwrap_or_default();
     let (updated, skipped) =
-        rewrite_quota_sidebar(&original, agents, layout, row_gap, fields, brand)?;
+        rewrite_quota_sidebar_with_titles(&original, agents, layout, row_gap, fields, brand, pane_titles)?;
     if updated == original {
         println!(
             "Herdr sidebar already contains quota tokens: {}",
@@ -183,6 +184,7 @@ pub fn apply(
     row_gap: SidebarRowGap,
     fields: FieldSet,
     brand: BrandColors,
+    pane_titles: PaneTitles,
 ) -> Result<()> {
     let path = config_path()?;
     let existed = path.exists();
@@ -422,16 +424,19 @@ fn matches_installed_quota_rows(
     for (fields, brand) in variants {
         for layout in SidebarLayout::CHOICES {
             for gap in [SidebarRowGap::FLUSH, SidebarRowGap::SEPARATED] {
-                if add_quota_row_with(
-                    original,
-                    &AgentSelection::SUPPORTED,
-                    layout,
-                    gap,
-                    fields,
-                    brand,
-                )? == current
-                {
-                    return Ok(true);
+                for pane_titles in [PaneTitles::Off, PaneTitles::On] {
+                    if add_quota_row_with_titles(
+                        original,
+                        &AgentSelection::SUPPORTED,
+                        layout,
+                        gap,
+                        fields,
+                        brand,
+                        pane_titles,
+                    )? == current
+                    {
+                        return Ok(true);
+                    }
                 }
             }
         }
@@ -473,13 +478,41 @@ pub fn add_quota_row_with(
     Ok(rewrite_quota_sidebar(input, agents, layout, row_gap, fields, brand)?.0)
 }
 
+// Keep the historical helper for tests and callers inspecting old layouts.
+// Production configure resolves the new preference, which defaults to on.
 fn rewrite_quota_sidebar(
     input: &str,
     agents: &[Harness],
     layout: SidebarLayout,
     row_gap: SidebarRowGap,
     fields: FieldSet,
+    brand: BrandColors,
+) -> Result<(String, Vec<&'static str>)> {
+    rewrite_quota_sidebar_with_titles(input, agents, layout, row_gap, fields, brand, PaneTitles::Off)
+}
+
+pub fn add_quota_row_with_titles(
+    input: &str,
+    agents: &[Harness],
+    layout: SidebarLayout,
+    row_gap: SidebarRowGap,
+    fields: FieldSet,
+    brand: BrandColors,
+    pane_titles: PaneTitles,
+) -> Result<String> {
+    Ok(rewrite_quota_sidebar_with_titles(
+        input, agents, layout, row_gap, fields, brand, pane_titles,
+    )?.0)
+}
+
+fn rewrite_quota_sidebar_with_titles(
+    input: &str,
+    agents: &[Harness],
+    layout: SidebarLayout,
+    row_gap: SidebarRowGap,
+    fields: FieldSet,
     _brand: BrandColors,
+    pane_titles: PaneTitles,
 ) -> Result<(String, Vec<&'static str>)> {
     let mut document = if input.trim().is_empty() {
         DocumentMut::new()
@@ -532,6 +565,8 @@ fn rewrite_quota_sidebar(
         original_rows,
         layout,
         fields,
+        pane_titles,
+        rows_managed,
         if rows_safe {
             RowRewrite::Takeover
         } else {
@@ -567,6 +602,8 @@ fn build_managed_rows(
     original: Option<&Array>,
     layout: SidebarLayout,
     fields: FieldSet,
+    pane_titles: PaneTitles,
+    original_is_managed: bool,
     rewrite: RowRewrite,
 ) -> Result<Array> {
     let preserved = match rewrite {
@@ -581,6 +618,9 @@ fn build_managed_rows(
             if let Some(original) = original {
                 for row in original {
                     let cleaned = strip_quota_tokens(row);
+                    if original_is_managed && is_managed_pane_title_row(&cleaned) {
+                        continue;
+                    }
                     if cleaned.is_empty() {
                         continue;
                     }
@@ -598,8 +638,22 @@ fn build_managed_rows(
         }
     };
     let user_count = preserved.len();
+    let has_user_title = preserved.iter().any(|row| {
+        row.as_array().is_some_and(|items| {
+            items
+                .iter()
+                .any(|item| configured_token_name(item) == Some("terminal_title_stripped"))
+        })
+    });
     let mut updated_rows = preserved;
     append_quota_rows(&mut updated_rows, layout);
+    if pane_titles == PaneTitles::On && !has_user_title {
+        // Native Herdr token: /rename updates without pane reads or metadata writes.
+        updated_rows.insert(
+            user_count + 1,
+            Value::Array(styled_row("terminal_title_stripped", None, Some(true), Some(false))),
+        );
+    }
     // Keep `$quota_group` first so Space aggregation stays the head row;
     // user-owned extras (pane/git/other plugins) sit directly under it.
     if user_count > 0 {
@@ -620,6 +674,21 @@ fn build_managed_rows(
     }
     retain_selected_fields(&mut updated_rows, fields);
     Ok(updated_rows)
+}
+
+// Remove only our exact styled row from a marked managed layout.
+// User-authored unmarked title rows remain untouched.
+fn is_managed_pane_title_row(row: &Array) -> bool {
+    if row.len() != 1 {
+        return false;
+    }
+    let Some(value) = row.get(0).and_then(Value::as_inline_table) else {
+        return false;
+    };
+    value.len() == 3
+        && value.get("token").and_then(Value::as_str) == Some("terminal_title_stripped")
+        && value.get("bold").and_then(Value::as_bool) == Some(true)
+        && value.get("dim").and_then(Value::as_bool) == Some(false)
 }
 
 // Recognize only the tab styling written by older plugin versions. A managed
@@ -748,10 +817,17 @@ pub fn remove_quota_row_for(input: &str, agents: &[Harness], full: bool) -> Resu
     if !full {
         return Ok(document.to_string());
     }
+    let managed_rows = table
+        .get("rows")
+        .and_then(Item::as_value)
+        .is_some_and(has_rows_marker);
     if let Some(rows) = table.get_mut("rows").and_then(Item::as_array_mut) {
         let mut retained = Array::new();
         for row in rows.iter() {
             let cleaned = strip_quota_tokens(row);
+            if managed_rows && is_managed_pane_title_row(&cleaned) {
+                continue;
+            }
             if !cleaned.is_empty() {
                 retained.push(Value::Array(cleaned));
             }
@@ -1671,6 +1747,69 @@ mod tests {
                 assert!(removed.contains("$git_branch"));
                 assert!(removed.contains("#123456"));
                 assert!(!removed.contains("$quota_"));
+            }
+        }
+    }
+
+    #[test]
+    fn pane_title_toggle_repairs_without_duplication() {
+        let original = "[ui.sidebar.agents]\nrows = [[\"state_icon\", \"machine\", \"workspace\", \"tab\"], [\"agent\"]]\n";
+        let rewrite = |input: &str, layout, titles| {
+            add_quota_row_with_titles(
+                input,
+                &AgentSelection::SUPPORTED,
+                layout,
+                SidebarRowGap::default(),
+                FieldSet::all(),
+                BrandColors::On,
+                titles,
+            )
+            .unwrap()
+        };
+        for layout in SidebarLayout::CHOICES {
+            let on = rewrite(original, layout, PaneTitles::On);
+            assert_eq!(on.matches("terminal_title_stripped").count(), 1, "{on}");
+            assert_eq!(rewrite(&on, layout, PaneTitles::On), on);
+            let document = on.parse::<DocumentMut>().unwrap();
+            let rows = document["ui"]["sidebar"]["agents"]["rows"].as_array().unwrap();
+            let title = rows
+                .iter()
+                .position(|row| row_contains_token(row, "terminal_title_stripped"))
+                .unwrap();
+            assert_eq!(title, 1, "{on}");
+            assert!(row_is_only_token(rows, "$quota_group"), "{on}");
+
+            let off = rewrite(&on, layout, PaneTitles::Off);
+            assert!(!off.contains("terminal_title_stripped"), "{off}");
+            assert_eq!(rewrite(&off, layout, PaneTitles::Off), off);
+            assert_eq!(rewrite(&off, layout, PaneTitles::On), on);
+            let uninstalled = remove_quota_row(&on).unwrap();
+            assert!(!uninstalled.contains("terminal_title_stripped"), "{uninstalled}");
+            assert!(uninstalled.contains("\"workspace\""), "{uninstalled}");
+        }
+    }
+
+    #[test]
+    fn custom_user_title_rows_survive_preserve_path() {
+        let original = "[ui.sidebar.agents]\nrows = [[\"state_icon\", \"pane\", \"terminal_title_stripped\"]]\n";
+        for layout in SidebarLayout::CHOICES {
+            for titles in [PaneTitles::On, PaneTitles::Off] {
+                let rewrite = |input| {
+                    add_quota_row_with_titles(
+                        input,
+                        &AgentSelection::SUPPORTED,
+                        layout,
+                        SidebarRowGap::default(),
+                        FieldSet::all(),
+                        BrandColors::On,
+                        titles,
+                    )
+                    .unwrap()
+                };
+                let result = rewrite(original);
+                assert!(result.contains("\"pane\""), "{result}");
+                assert!(result.contains("rows_by_agent"), "{result}");
+                assert_eq!(rewrite(&result), result);
             }
         }
     }

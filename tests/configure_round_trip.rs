@@ -3230,6 +3230,27 @@ fn stacked_sidebar_layout_is_persisted_across_a_repair() {
 }
 
 #[test]
+fn pane_titles_default_on_and_persist_off_across_repair() {
+    let root = tempdir().unwrap();
+    let homes = AgentHomes::new(root.path());
+
+    assert!(homes.configure(&["--apply"]).status.success());
+    assert!(sidebar_has_token(&homes.sidebar(), "terminal_title_stripped"));
+    assert!(homes
+        .configure(&["--apply", "--pane-titles", "off"])
+        .status
+        .success());
+    assert!(!sidebar_has_token(&homes.sidebar(), "terminal_title_stripped"));
+    assert!(homes.configure(&["--apply"]).status.success());
+    assert!(!sidebar_has_token(&homes.sidebar(), "terminal_title_stripped"));
+    assert!(homes
+        .configure(&["--apply", "--pane-titles", "on"])
+        .status
+        .success());
+    assert!(sidebar_has_token(&homes.sidebar(), "terminal_title_stripped"));
+}
+
+#[test]
 fn sidebar_pacing_is_opt_in_and_persisted_across_a_repair() {
     let root = tempdir().unwrap();
     let homes = AgentHomes::new(root.path());
